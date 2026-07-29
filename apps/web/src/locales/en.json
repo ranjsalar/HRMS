@@ -1,0 +1,254 @@
+{
+  "app": {
+    "name": "HRMS"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "errors": {
+      "forbidden": {
+        "title": "Access denied",
+        "message": "You don't have permission to view this."
+      },
+      "notFound": {
+        "title": "Not found",
+        "message": "This item doesn't exist or isn't available to you."
+      },
+      "conflict": {
+        "title": "Can't complete this",
+        "message": "This conflicts with something that already exists."
+      },
+      "generic": {
+        "title": "Something went wrong",
+        "message": "An unexpected error occurred. Please try again."
+      }
+    },
+    "validation": {
+      "required": "This field is required.",
+      "emailInvalid": "Enter a valid email address.",
+      "passwordMinLength": "Password must be at least 8 characters.",
+      "codeInvalid": "Enter the 6-digit code."
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "forgotPassword": "Forgot password?",
+      "invalidCredentials": "Invalid email or password."
+    },
+    "twoFactor": {
+      "verifyTitle": "Two-factor verification",
+      "verifyInstructions": "Enter the 6-digit code from your authenticator app.",
+      "enrollTitle": "Set up two-factor authentication",
+      "enrollInstructions": "Scan this QR code with your authenticator app, or enter the secret key manually.",
+      "secretLabel": "Secret key",
+      "code": "Verification code",
+      "verifySubmit": "Verify",
+      "enableSubmit": "Enable and continue",
+      "invalidCode": "Invalid or expired code."
+    },
+    "changePassword": {
+      "title": "Update your password",
+      "instructions": "You must set a new password before continuing.",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "submit": "Update password",
+      "success": "Password updated."
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "instructions": "Enter your email and we'll send you a reset link if an account exists.",
+      "email": "Email",
+      "submit": "Send reset link",
+      "sent": "If this email exists, a password reset link was sent.",
+      "backToLogin": "Back to sign in"
+    },
+    "resetPassword": {
+      "title": "Choose a new password",
+      "newPassword": "New password",
+      "submit": "Update password",
+      "success": "Your password has been updated. You can now sign in.",
+      "invalidToken": "This reset link is invalid or has expired.",
+      "backToLogin": "Back to sign in"
+    },
+    "logout": "Sign out"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "employees": "Employees",
+    "attendance": "Attendance",
+    "leave": "Leave",
+    "payroll": "Payroll",
+    "payslips": "Payslips",
+    "profile": "Profile",
+    "documents": "Documents",
+    "team": "Team",
+    "orgChart": "Org chart",
+    "leaveApprovals": "Leave approvals"
+  },
+  "dashboard": {
+    "greeting": "Welcome, {{name}}",
+    "attendance": {
+      "title": "Today's attendance",
+      "statusNotClockedIn": "You haven't clocked in today.",
+      "statusClockedIn": "Clocked in at {{time}}.",
+      "statusClockedOut": "Clocked out at {{time}}.",
+      "clockIn": "Clock in",
+      "clockOut": "Clock out",
+      "clockingIn": "Clocking in…",
+      "clockingOut": "Clocking out…",
+      "clockInSuccess": "Clocked in successfully.",
+      "clockOutSuccess": "Clocked out successfully.",
+      "geofenceWarningTitle": "Outside your assigned work location",
+      "geofenceWarning": "This was recorded, but you appear to be outside your assigned work location.",
+      "locationUnavailable": "We couldn't determine your location. You can still clock in — this will be recorded without location data.",
+      "locationPermissionDenied": "Location access was denied. You can still clock in — this will be recorded without location data.",
+      "loadError": "Couldn't load today's attendance status."
+    },
+    "leaveBalance": {
+      "title": "Leave balance",
+      "daysRemaining": "{{count}} days remaining",
+      "empty": "No leave balances yet.",
+      "loadError": "Couldn't load your leave balances."
+    },
+    "holidays": {
+      "title": "Upcoming holidays",
+      "empty": "No upcoming holidays.",
+      "loadError": "Couldn't load upcoming holidays."
+    }
+  },
+  "leave": {
+    "submit": {
+      "title": "Request leave",
+      "leaveType": "Leave type",
+      "leaveTypePlaceholder": "Select a leave type",
+      "startDate": "Start date",
+      "endDate": "End date",
+      "reason": "Reason (optional)",
+      "submit": "Submit request",
+      "submitting": "Submitting…",
+      "success": "Leave request submitted.",
+      "endDateBeforeStart": "End date must not be before start date.",
+      "previewLoading": "Calculating working days…",
+      "previewPending": "Pick a start and end date to see the working-day count.",
+      "previewDays": "{{count}} working day(s) will be deducted",
+      "balanceForType": "{{count}} day(s) remaining in this leave type",
+      "wouldExceedBalance": "This would exceed your remaining balance."
+    },
+    "history": {
+      "title": "Your leave requests",
+      "empty": "You haven't submitted any leave requests yet.",
+      "cancel": "Cancel request",
+      "cancelling": "Cancelling…",
+      "cancelSuccess": "Request cancelled.",
+      "dateRange": "{{start}} – {{end}}",
+      "workingDays": "{{count}} working day(s)",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "cancelled": "Cancelled"
+      }
+    }
+  },
+  "payslips": {
+    "title": "Payslips",
+    "period": "{{start}} – {{end}}",
+    "gross": "Gross",
+    "net": "Net",
+    "download": "Download",
+    "preparingDownload": "Preparing…",
+    "notReady": "This payslip's PDF isn't ready yet.",
+    "downloadError": "Couldn't prepare a download link. Try again.",
+    "empty": "No payslips yet."
+  },
+  "profile": {
+    "title": "My profile",
+    "fullName": "Full name",
+    "jobTitle": "Job title",
+    "hireDate": "Hire date",
+    "editTitle": "Contact details",
+    "editHint": "These are the only fields you can update yourself — everything else is managed by HR.",
+    "phone": "Phone",
+    "address": "Address",
+    "emergencyContactName": "Emergency contact name",
+    "emergencyContactPhone": "Emergency contact phone",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "success": "Profile updated.",
+    "loadError": "Couldn't load your profile."
+  },
+  "documents": {
+    "title": "Documents",
+    "type": {
+      "contract": "Contract",
+      "id": "ID",
+      "passport": "Passport",
+      "certificate": "Certificate"
+    },
+    "uploadedAt": "Uploaded {{date}}",
+    "expiresOn": "Expires {{date}}",
+    "view": "View",
+    "preparingView": "Preparing…",
+    "viewError": "Couldn't prepare a link to view this. Try again.",
+    "empty": "No documents yet.",
+    "loadError": "Couldn't load your documents.",
+    "uploadTitle": "Upload a document",
+    "documentType": "Document type",
+    "selectType": "Select a document type",
+    "chooseFile": "Choose file",
+    "upload": "Upload",
+    "uploading": "Uploading…",
+    "uploadSuccess": "Document uploaded.",
+    "fileRequired": "Choose a file to upload."
+  },
+  "team": {
+    "title": "Team",
+    "fullName": "Name",
+    "jobTitle": "Job title",
+    "hireDate": "Hire date",
+    "status": {
+      "active": "Active",
+      "on_leave": "On leave",
+      "terminated": "Terminated"
+    },
+    "empty": "No team members to show.",
+    "loadError": "Couldn't load your team.",
+    "correctAttendance": "Correct attendance"
+  },
+  "leaveApprovals": {
+    "title": "Pending leave approvals",
+    "empty": "No pending leave requests.",
+    "loadError": "Couldn't load pending leave requests.",
+    "contextLoading": "Loading context…",
+    "approve": "Approve",
+    "approving": "Approving…",
+    "reject": "Reject",
+    "rejecting": "Rejecting…"
+  },
+  "orgChart": {
+    "title": "Org chart",
+    "manager": "Manager: {{name}}",
+    "noManager": "No manager assigned",
+    "employeeCount": "{{count}} employee(s)",
+    "empty": "No departments to show.",
+    "loadError": "Couldn't load the org chart."
+  },
+  "attendanceCorrection": {
+    "title": "Correct attendance for {{name}}",
+    "clockIn": "Clock in",
+    "clockOut": "Clock out (optional)",
+    "note": "Note",
+    "noteRequired": "A note is required to explain this correction.",
+    "submit": "Save correction",
+    "submitting": "Saving…",
+    "success": "Correction saved — recorded as an admin override, not a normal clock-in.",
+    "cancel": "Cancel"
+  }
+}

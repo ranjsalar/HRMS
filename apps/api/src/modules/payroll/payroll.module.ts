@@ -1,0 +1,48 @@
+import { Module } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { JwtModule } from "@nestjs/jwt";
+import { AuditModule } from "../audit/audit.module";
+import { EmployeesModule } from "../employees/employees.module";
+import { LocalDiskStorageService } from "../../common/storage/local-disk-storage.service";
+import { STORAGE_SERVICE } from "../../common/storage/storage.interface";
+import { PayrollRulesController } from "./payroll-rules.controller";
+import { PayrollRulesService } from "./payroll-rules.service";
+import { PayrollRunsController } from "./payroll-runs.controller";
+import { PayrollRunsService } from "./payroll-runs.service";
+import { PayrollPdfService } from "./payroll-pdf.service";
+import { PayrollQueueService } from "./payroll-queue.service";
+import { PayrollWorkerService } from "./payroll-worker.service";
+import { PAYROLL_PDF_QUEUE } from "./payroll.queue";
+import { PayslipTokenService } from "./payslip-token.service";
+import { PayslipsController } from "./payslips.controller";
+import { PayslipsService } from "./payslips.service";
+
+@Module({
+  // JwtModule.register({}): PayslipTokenService supplies its own secret
+  // (PAYSLIP_URL_SECRET) per call, same reasoning as DocumentsModule.
+  imports: [JwtModule.register({}), AuditModule, EmployeesModule],
+  controllers: [PayrollRulesController, PayrollRunsController, PayslipsController],
+  providers: [
+    PayrollRulesService,
+    PayrollRunsService,
+    PayrollPdfService,
+    PayrollQueueService,
+    PayrollWorkerService,
+    PayslipTokenService,
+    PayslipsService,
+    {
+      provide: STORAGE_SERVICE,
+      useFactory: (config: ConfigService) =>
+        new LocalDiskStorageService(
+          config.get<string>("PAYSLIP_STORAGE_PATH") ?? "./storage/payslips",
+        ),
+      inject: [ConfigService],
+    },
+    {
+      provide: PAYROLL_PDF_QUEUE,
+      useFactory: (queueService: PayrollQueueService) => queueService.queue,
+      inject: [PayrollQueueService],
+    },
+  ],
+})
+export class PayrollModule {}

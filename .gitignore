@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.next/
+out/
+
+# turbo
+.turbo/
+
+# env
+.env
+.env.test
+.env.production
+.env.*.local
+!.env.example
+!.env.test.example
+!.env.production.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# testing
+coverage/
+
+# prisma
+apps/api/src/database/prisma/migrations/dev.db
+
+# uploaded documents (local disk storage — see DOCUMENT_STORAGE_PATH)
+/storage/
+
+# misc
+*.tsbuildinfo
+.env.local

@@ -1,0 +1,15 @@
+:root {
+  --color-primary: #0f5257;
+  --color-primary-dark: #0a3a3d;
+  --color-accent: #e0a458;
+  --color-success: #3e8e5a;
+  --color-warning: #d68a3c;
+  --color-danger: #b3452c;
+  --color-neutral-900: #1b2426;
+  --color-neutral-100: #f5f3ef;
+  --color-neutral-300: #d9d4c8;
+
+  --font-heading: "Manrope", var(--font-arabic), sans-serif;
+  --font-body: "Inter", var(--font-arabic), sans-serif;
+  --font-arabic: "Cairo", "IBM Plex Sans Arabic", sans-serif;
+}

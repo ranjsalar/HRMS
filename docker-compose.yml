@@ -1,0 +1,91 @@
+name: hrms
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hrms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms}
+    ports:
+      # Host-side port is 5433, not the default 5432 — this dev machine has a
+      # native Postgres Windows service already bound to 5432 (see
+      # DECISIONS.md). Internal container-to-container traffic (api/web
+      # reaching `postgres:5432`) is unaffected; this only changes how the
+      # host machine reaches it.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hrms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local SMTP catcher for dev — every email the API sends in development
+  # lands here, never a real inbox. SMTP on 1025 (what the API's SMTP_HOST/
+  # SMTP_PORT point at), web UI + REST API on 1080 (what a human, or an
+  # e2e test, uses to inspect what was "sent"). Swapped for a real SMTP
+  # provider via env vars in production — see DECISIONS.md ("Real
+  # password-reset email delivery").
+  maildev:
+    image: maildev/maildev:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "1080:1080"
+
+  api:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @hrms/api dev"
+    env_file:
+      - .env
+    environment:
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/workspace
+      - api_node_modules:/workspace/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /workspace
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile=false && pnpm --filter @hrms/web dev"
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/workspace
+      - web_node_modules:/workspace/node_modules
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  api_node_modules:
+  web_node_modules:
