@@ -1,0 +1,248 @@
+name: CI
+
+# Continuous verification only — no deployment. Every push/PR runs
+# lint+typecheck, the backend unit suite, the backend e2e suite (real
+# Postgres/Redis/MailDev service containers, not mocked), and the
+# frontend suite (which itself hits a REAL running API instance for its
+# *.integration.spec.tsx files — this project's standing "no mocking"
+# testing philosophy, matched here rather than weakened for CI). See
+# DECISIONS.md ("Infrastructure pass, item 8: CI").
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+
+  backend-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hrms/api exec prisma generate
+      - run: pnpm --filter @hrms/api test
+
+  # Real Postgres/Redis/MailDev service containers — same images
+  # docker-compose.yml uses for local dev, no mocking. Role/GRANT setup
+  # (bootstrap-roles) and RLS/auth-scope verification scripts run for
+  # real too, exactly matching README.md's documented local setup
+  # sequence — not a CI-only shortcut.
+  backend-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hrms
+          POSTGRES_PASSWORD: hrms_ci_password
+          POSTGRES_DB: hrms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hrms"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      maildev:
+        image: maildev/maildev:latest
+        ports:
+          - 1025:1025
+          - 1080:1080
+    env:
+      NODE_ENV: test
+      DATABASE_MIGRATE_URL: postgresql://hrms:hrms_ci_password@localhost:5432/hrms?schema=public
+      DATABASE_URL: postgresql://hrms_app:hrms_app_ci_password@localhost:5432/hrms?schema=public
+      DATABASE_SUPERADMIN_URL: postgresql://hrms_superadmin:hrms_superadmin_ci_password@localhost:5432/hrms?schema=public
+      DATABASE_AUTH_URL: postgresql://hrms_auth:hrms_auth_ci_password@localhost:5432/hrms?schema=public
+      HRMS_APP_DB_PASSWORD: hrms_app_ci_password
+      HRMS_SUPERADMIN_DB_PASSWORD: hrms_superadmin_ci_password
+      HRMS_AUTH_DB_PASSWORD: hrms_auth_ci_password
+      REDIS_URL: redis://localhost:6379/1
+      JWT_ACCESS_SECRET: ci_only_jwt_access_secret_at_least_32_characters
+      PASSWORD_RESET_SECRET: ci_only_password_reset_secret_at_least_32_chars
+      PASSWORD_RESET_TTL: 30m
+      TWO_FACTOR_PENDING_SECRET: ci_only_two_factor_pending_secret_32ch_min
+      TWO_FACTOR_PENDING_TTL: 5m
+      TOTP_ISSUER: HRMS-CI
+      # Real base64-encoded 32-byte key, not just a 32+ char string — the
+      # auth/employees e2e tests genuinely encrypt/decrypt through this.
+      FIELD_ENCRYPTION_KEY: "wF3v0Q0nJc7rQe2m8ZbY1sD4kL6pX9tA5uH2gN0cV3o="
+      DOCUMENT_STORAGE_PATH: ../../storage/documents-ci
+      DOCUMENT_URL_SECRET: ci_only_document_url_secret_at_least_32_chars
+      DOCUMENT_URL_TTL: 10m
+      PAYSLIP_STORAGE_PATH: ../../storage/payslips-ci
+      PAYSLIP_URL_SECRET: ci_only_payslip_url_secret_at_least_32_characters
+      PAYSLIP_URL_TTL: 10m
+      CORS_ORIGINS: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      EMAIL_FROM: "HRMS CI <no-reply@hrms.ci>"
+      AUTH_LOGIN_RATE_LIMIT: "10"
+      AUTH_STRICT_RATE_LIMIT: "5"
+      # Regression-test canary (test/env-isolation.e2e-spec.ts) — see
+      # DECISIONS.md, "Config hygiene". No apps/api/.env file exists in
+      # this job at all (gitignored, never committed), so the OTHER half
+      # of that test (proving a dev-only var never leaks) is trivially
+      # true here by construction — there's nothing for Prisma to find.
+      ENV_ISOLATION_CANARY: test-value
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hrms/api exec prisma generate
+      - run: pnpm --filter @hrms/api exec prisma migrate deploy
+      - run: pnpm --filter @hrms/api db:bootstrap-roles
+      - run: pnpm --filter @hrms/api db:seed
+      - run: pnpm --filter @hrms/api db:verify-rls
+      - run: pnpm --filter @hrms/api db:verify-auth-scope
+      - run: pnpm --filter @hrms/api exec jest --config ./test/jest-e2e.json --runInBand
+
+  # apps/web's suite mixes pure unit/component specs with
+  # *.integration.spec.tsx files that call the REAL API over HTTP (no
+  # mocked apiFetch) — this project's real-backend testing philosophy
+  # applies to the frontend too, not just apps/api's own e2e suite. CI
+  # boots an actual API instance (built + started, not ts-node/watch
+  # mode) against the same service containers as backend-e2e, seeds the
+  # frontend's own stable fixture accounts, and only then runs the
+  # frontend suite against it.
+  frontend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hrms
+          POSTGRES_PASSWORD: hrms_ci_password
+          POSTGRES_DB: hrms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hrms"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      maildev:
+        image: maildev/maildev:latest
+        ports:
+          - 1025:1025
+          - 1080:1080
+    env:
+      NODE_ENV: development
+      PORT: "3001"
+      DATABASE_MIGRATE_URL: postgresql://hrms:hrms_ci_password@localhost:5432/hrms?schema=public
+      DATABASE_URL: postgresql://hrms_app:hrms_app_ci_password@localhost:5432/hrms?schema=public
+      DATABASE_SUPERADMIN_URL: postgresql://hrms_superadmin:hrms_superadmin_ci_password@localhost:5432/hrms?schema=public
+      DATABASE_AUTH_URL: postgresql://hrms_auth:hrms_auth_ci_password@localhost:5432/hrms?schema=public
+      HRMS_APP_DB_PASSWORD: hrms_app_ci_password
+      HRMS_SUPERADMIN_DB_PASSWORD: hrms_superadmin_ci_password
+      HRMS_AUTH_DB_PASSWORD: hrms_auth_ci_password
+      REDIS_URL: redis://localhost:6379/0
+      JWT_ACCESS_SECRET: ci_only_jwt_access_secret_at_least_32_characters
+      PASSWORD_RESET_SECRET: ci_only_password_reset_secret_at_least_32_chars
+      PASSWORD_RESET_TTL: 30m
+      TWO_FACTOR_PENDING_SECRET: ci_only_two_factor_pending_secret_32ch_min
+      TWO_FACTOR_PENDING_TTL: 5m
+      TOTP_ISSUER: HRMS-CI
+      FIELD_ENCRYPTION_KEY: "wF3v0Q0nJc7rQe2m8ZbY1sD4kL6pX9tA5uH2gN0cV3o="
+      DOCUMENT_STORAGE_PATH: ../../storage/documents-ci-web
+      DOCUMENT_URL_SECRET: ci_only_document_url_secret_at_least_32_chars
+      DOCUMENT_URL_TTL: 10m
+      PAYSLIP_STORAGE_PATH: ../../storage/payslips-ci-web
+      PAYSLIP_URL_SECRET: ci_only_payslip_url_secret_at_least_32_characters
+      PAYSLIP_URL_TTL: 10m
+      CORS_ORIGINS: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      EMAIL_FROM: "HRMS CI <no-reply@hrms.ci>"
+      AUTH_LOGIN_RATE_LIMIT: "200"
+      AUTH_STRICT_RATE_LIMIT: "100"
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hrms/api exec prisma generate
+      - run: pnpm --filter @hrms/api exec prisma migrate deploy
+      - run: pnpm --filter @hrms/api db:bootstrap-roles
+      - run: pnpm --filter @hrms/api db:seed
+      - run: pnpm --filter @hrms/api db:seed-frontend-auth-fixtures
+      - run: pnpm --filter @hrms/api build
+      - name: Start API server
+        # cwd MUST be apps/api — DOCUMENT_STORAGE_PATH/PAYSLIP_STORAGE_PATH
+        # above are "../../storage/..." relative to apps/api (matching
+        # the real apps/api/.env convention), not the repo root. Runs as
+        # a background process that survives into later steps of this
+        # same job (standard GitHub Actions pattern for this).
+        working-directory: apps/api
+        run: nohup node dist/main.js > ../../api-server.log 2>&1 &
+      - name: Wait for API health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/api/health > /dev/null; then
+              echo "API is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API never became healthy — server log follows:"
+          cat api-server.log
+          exit 1
+      - run: pnpm --filter @hrms/web test
+        if: success()
+      - name: Show API server log on failure
+        if: failure()
+        run: cat api-server.log || true
