@@ -26,6 +26,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Without this, @prisma/client's generated types don't exist and
+      # @typescript-eslint's type-aware rules (no-unsafe-*) degrade to
+      # treating every Prisma-touching value as `any`, producing 10 false
+      # "unsafe any" errors across files this run never touched — found
+      # live on the first real CI run, not by inspection. Every other job
+      # already ran this; this job was the one gap. See DECISIONS.md.
+      - run: pnpm --filter @hrms/api exec prisma generate
       - run: pnpm run lint
       - run: pnpm run typecheck
 
@@ -77,6 +84,19 @@ jobs:
         ports:
           - 1025:1025
           - 1080:1080
+        # Overrides the image's own baked-in Docker HEALTHCHECK, which is
+        # broken (confirmed independently in local dev too — `docker ps`
+        # reports it "unhealthy" via a wget call against the wrong
+        # target, even though the actual service works fine). Without
+        # this override, GitHub Actions waits on that broken check and
+        # fails the whole job with "Failed to initialize container" —
+        # found on the first real CI run. wget is confirmed present in
+        # this image (it's what the broken default check itself uses).
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:1080/ || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
       DATABASE_MIGRATE_URL: postgresql://hrms:hrms_ci_password@localhost:5432/hrms?schema=public
@@ -172,6 +192,19 @@ jobs:
         ports:
           - 1025:1025
           - 1080:1080
+        # Overrides the image's own baked-in Docker HEALTHCHECK, which is
+        # broken (confirmed independently in local dev too — `docker ps`
+        # reports it "unhealthy" via a wget call against the wrong
+        # target, even though the actual service works fine). Without
+        # this override, GitHub Actions waits on that broken check and
+        # fails the whole job with "Failed to initialize container" —
+        # found on the first real CI run. wget is confirmed present in
+        # this image (it's what the broken default check itself uses).
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:1080/ || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: development
       PORT: "3001"
