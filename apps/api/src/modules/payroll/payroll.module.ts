@@ -3,7 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { AuditModule } from "../audit/audit.module";
 import { EmployeesModule } from "../employees/employees.module";
-import { LocalDiskStorageService } from "../../common/storage/local-disk-storage.service";
+import { createStorageService } from "../../common/storage/storage.factory";
 import { STORAGE_SERVICE } from "../../common/storage/storage.interface";
 import { PayrollRulesController } from "./payroll-rules.controller";
 import { PayrollRulesService } from "./payroll-rules.service";
@@ -33,9 +33,7 @@ import { PayslipsService } from "./payslips.service";
     {
       provide: STORAGE_SERVICE,
       useFactory: (config: ConfigService) =>
-        new LocalDiskStorageService(
-          config.get<string>("PAYSLIP_STORAGE_PATH") ?? "./storage/payslips",
-        ),
+        createStorageService(config, "PAYSLIP_STORAGE_PATH", "./storage/payslips", "payslips"),
       inject: [ConfigService],
     },
     {

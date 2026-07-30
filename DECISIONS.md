@@ -7,6 +7,87 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 7: File storage (S3-compatible backend)
+
+`S3StorageService` (`common/storage/s3-storage.service.ts`) implements
+the existing `StorageService` interface using `@aws-sdk/client-s3` —
+works against real AWS S3, DigitalOcean Spaces, or any other
+S3-API-compatible service, differing only by configured endpoint/
+credentials. **Code-complete and REALLY tested, but deliberately NOT
+the active backend anywhere** — local disk remains active in dev, test,
+CI, and this project's production compose stack, per the founder's
+explicit, cost-driven deferral of DigitalOcean Spaces (see the earlier
+"deliberately deferred" entry). Switching a real deployment is exactly
+one env var (`STORAGE_DRIVER=s3` + the `S3_*` values), not a code
+change — the whole point of building to the existing interface.
+
+### Verified against real MinIO, not just typechecked — same reasoning as choosing MailDev for email
+
+A self-hosted, zero-external-account, real S3-API-compatible target —
+avoids needing to create (and eventually pay for) a real DigitalOcean
+Spaces bucket just to prove the CODE works, exactly the same logic
+already applied to MailDev over Mailtrap for email. `test/
+s3-storage.manual-spec.ts` proves real save/read/exists/delete against
+a real running MinIO container — deliberately named `*.manual-spec.ts`,
+not `*.e2e-spec.ts`, so it's NOT picked up by the standard `pnpm
+test:e2e`/CI run (neither dev's `docker-compose.yml` nor CI runs a MinIO
+service — adding one as a permanent dependency of the routine suite
+isn't justified for a backend that isn't active anywhere yet). Run
+explicitly via `pnpm --filter @hrms/api test:s3-storage` — the file's
+own header comment has the exact `docker run` commands.
+
+### Real bug found by that verification: `GetObject`'s "not found" error has a different shape than `HeadObject`'s
+
+`read()`'s original error handling checked `instanceof NotFound` — the
+AWS SDK v3's typed error class, but one specifically shaped for
+`HeadObjectCommand`'s 404 response (which is why `exists()`'s bare
+`catch` already worked fine). `GetObjectCommand`'s real "missing key"
+response is a differently-named error (`NoSuchKey`), so the "genuinely
+missing key throws our own `NotFoundException`" test failed against
+real MinIO with the SDK's raw message instead. Fixed by checking
+`error instanceof S3ServiceException && error.$metadata.httpStatusCode
+=== 404` — the HTTP status code, not a specific named error class, is
+what's actually guaranteed consistent across `GetObject` vs
+`HeadObject` AND across providers (AWS S3/MinIO/DigitalOcean Spaces),
+none of which are guaranteed to shape their "not found" XML identically.
+
+### One bucket, key-prefixed, not two buckets
+
+`LocalDiskStorageService` uses two separate root directories
+(`DOCUMENT_STORAGE_PATH`/`PAYSLIP_STORAGE_PATH`) for the same logical
+separation `S3StorageService` achieves via a `keyPrefix` constructor
+option (`"documents"`/`"payslips"`) within ONE configured bucket —
+matches how a single DigitalOcean Spaces bucket is typically organized
+(folders, not multiple paid buckets) rather than requiring two separate
+bucket names/credentials for what's still one deployment.
+
+### Shared `createStorageService()` factory, not duplicated branching in both modules
+
+`DocumentsModule` and `PayrollModule` each bind `STORAGE_SERVICE` via
+their own `useFactory`, previously both directly instantiating
+`LocalDiskStorageService`. `common/storage/storage.factory.ts` now
+centralizes the local-vs-s3 decision (reading `STORAGE_DRIVER`, default
+`"local"`) in one place both modules call, rather than duplicating the
+branch. `S3_*` env vars are deliberately OPTIONAL at the Zod schema
+level — required only via `getOrThrow()` inside the factory, and only
+reached when `STORAGE_DRIVER=s3` is actually selected, so a local-disk
+deployment (every environment right now) never needs dummy S3 values
+just to pass boot-time validation. Verified this fails LOUDLY and
+immediately (not silently/lazily) when misconfigured, via a dedicated
+unit test (`storage.factory.spec.ts`).
+
+### Verification
+
+`storage.factory.spec.ts` (4 unit tests: correct class per driver,
+throws immediately on missing S3 config) and `s3-storage.manual-spec.ts`
+(5 tests against real MinIO, all passing after the `NoSuchKey` fix)
+both green. Full backend unit suite (21 files/130 tests) and e2e suite
+(11 files/80 tests) re-run green after wiring the shared factory into
+both consuming modules — confirms `LocalDiskStorageService` remains
+correctly active by default, unaffected by this change.
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 4: Reverse proxy + TLS (Caddy)
 
 `docker-compose.prod.yml` (distinct from the dev-only root

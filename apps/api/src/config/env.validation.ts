@@ -80,6 +80,34 @@ const envSchema = z.object({
   PAYSLIP_URL_SECRET: z.string().min(32),
   PAYSLIP_URL_TTL: z.string().default("10m"),
 
+  // "local" (default, everywhere — dev, test, and this project's
+  // current production compose stack) or "s3", read by
+  // storage.factory.ts's createStorageService(), shared by
+  // DocumentsModule and PayrollModule. S3_* below are deliberately
+  // OPTIONAL at the schema level — required only via getOrThrow() at
+  // the point createStorageService() actually needs them, so a
+  // local-disk deployment never has to set dummy S3 values just to
+  // pass boot-time validation. See DECISIONS.md ("Infrastructure pass,
+  // item 7: file storage") for why S3/DigitalOcean Spaces is code-ready
+  // but not yet the active backend anywhere.
+  STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  // Custom endpoint for any S3-API-compatible service that isn't real
+  // AWS S3 (MinIO, DigitalOcean Spaces, ...) — leave unset for real AWS.
+  S3_ENDPOINT: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  // MinIO (and some other S3-compatible services) require path-style
+  // requests (bucket.name in the URL PATH, not a virtual-hosted
+  // subdomain) — real AWS S3 and DigitalOcean Spaces both support
+  // virtual-hosted style, so this defaults to false and only needs
+  // setting true for services that specifically require it.
+  S3_FORCE_PATH_STYLE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+
   CORS_ORIGINS: z.string().default(""),
 
   // Auth-endpoint IP throttle limits (per 60s window) — see AuthModule

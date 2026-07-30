@@ -4,7 +4,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { AuditModule } from "../audit/audit.module";
 import { EmployeesModule } from "../employees/employees.module";
 import { STORAGE_SERVICE } from "../../common/storage/storage.interface";
-import { LocalDiskStorageService } from "../../common/storage/local-disk-storage.service";
+import { createStorageService } from "../../common/storage/storage.factory";
 import { DocumentsController } from "./documents.controller";
 import { DocumentsService } from "./documents.service";
 import { DocumentTokenService } from "./document-token.service";
@@ -20,9 +20,7 @@ import { DocumentTokenService } from "./document-token.service";
     {
       provide: STORAGE_SERVICE,
       useFactory: (config: ConfigService) =>
-        new LocalDiskStorageService(
-          config.get<string>("DOCUMENT_STORAGE_PATH") ?? "./storage/documents",
-        ),
+        createStorageService(config, "DOCUMENT_STORAGE_PATH", "./storage/documents", "documents"),
       inject: [ConfigService],
     },
   ],

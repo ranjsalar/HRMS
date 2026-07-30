@@ -124,6 +124,7 @@ jobs:
       PAYSLIP_STORAGE_PATH: ../../storage/payslips-ci
       PAYSLIP_URL_SECRET: ci_only_payslip_url_secret_at_least_32_characters
       PAYSLIP_URL_TTL: 10m
+      STORAGE_DRIVER: local
       CORS_ORIGINS: http://localhost:3000
       FRONTEND_URL: http://localhost:3000
       SMTP_HOST: localhost
@@ -242,6 +243,7 @@ jobs:
       PAYSLIP_STORAGE_PATH: ../../storage/payslips-ci-web
       PAYSLIP_URL_SECRET: ci_only_payslip_url_secret_at_least_32_characters
       PAYSLIP_URL_TTL: 10m
+      STORAGE_DRIVER: local
       CORS_ORIGINS: http://localhost:3000
       FRONTEND_URL: http://localhost:3000
       SMTP_HOST: localhost
