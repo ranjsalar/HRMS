@@ -86,14 +86,16 @@ jobs:
           - 1080:1080
         # Overrides the image's own baked-in Docker HEALTHCHECK, which is
         # broken (confirmed independently in local dev too — `docker ps`
-        # reports it "unhealthy" via a wget call against the wrong
-        # target, even though the actual service works fine). Without
-        # this override, GitHub Actions waits on that broken check and
-        # fails the whole job with "Failed to initialize container" —
-        # found on the first real CI run. wget is confirmed present in
-        # this image (it's what the broken default check itself uses).
+        # reports it "unhealthy"). Root cause, found by exec'ing into the
+        # container and testing directly (took two attempts — the first
+        # override, using "localhost", failed the exact same way): the
+        # app listens on 1080 IPv4-only (`0.0.0.0:1080`, confirmed via
+        # netstat inside the container), but "localhost" resolves to
+        # IPv6 (`::1`) first in this image, which has no listener on
+        # that port — "Connection refused". Using 127.0.0.1 explicitly
+        # avoids the IPv6 resolution entirely.
         options: >-
-          --health-cmd "wget -q --spider http://localhost:1080/ || exit 1"
+          --health-cmd "wget -q --spider http://127.0.0.1:1080/ || exit 1"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -194,14 +196,16 @@ jobs:
           - 1080:1080
         # Overrides the image's own baked-in Docker HEALTHCHECK, which is
         # broken (confirmed independently in local dev too — `docker ps`
-        # reports it "unhealthy" via a wget call against the wrong
-        # target, even though the actual service works fine). Without
-        # this override, GitHub Actions waits on that broken check and
-        # fails the whole job with "Failed to initialize container" —
-        # found on the first real CI run. wget is confirmed present in
-        # this image (it's what the broken default check itself uses).
+        # reports it "unhealthy"). Root cause, found by exec'ing into the
+        # container and testing directly (took two attempts — the first
+        # override, using "localhost", failed the exact same way): the
+        # app listens on 1080 IPv4-only (`0.0.0.0:1080`, confirmed via
+        # netstat inside the container), but "localhost" resolves to
+        # IPv6 (`::1`) first in this image, which has no listener on
+        # that port — "Connection refused". Using 127.0.0.1 explicitly
+        # avoids the IPv6 resolution entirely.
         options: >-
-          --health-cmd "wget -q --spider http://localhost:1080/ || exit 1"
+          --health-cmd "wget -q --spider http://127.0.0.1:1080/ || exit 1"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
