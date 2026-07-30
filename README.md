@@ -122,6 +122,43 @@ environment). Don't confuse the two; pass `--env-file` explicitly if a
 root `.env` for a different purpose already exists (e.g. this repo's own
 dev setup already has one).
 
+### Backups
+
+`scripts/backup-postgres.sh` / `scripts/restore-postgres.sh` — real
+`pg_dump`/`psql`, uploaded to/restored from S3-compatible off-VPS
+storage (works against DigitalOcean Spaces or plain S3; verified
+against real local MinIO — see `DECISIONS.md`, "Infrastructure pass,
+item 5"). Schedule the backup via the VPS's own crontab, not a Docker
+sidecar (kept simple — one plain shell script, no extra always-on
+container):
+
+```sh
+# crontab -e, daily at 03:00 VPS time:
+0 3 * * * cd /path/to/hrms && S3_ENDPOINT=... S3_ACCESS_KEY_ID=... \
+  S3_SECRET_ACCESS_KEY=... S3_BUCKET=... ./scripts/backup-postgres.sh >> /var/log/hrms-backup.log 2>&1
+```
+
+**Disaster recovery onto a genuinely fresh Postgres instance — order
+matters.** Run migrations + role bootstrap FIRST, restore SECOND:
+
+```sh
+pnpm --filter @hrms/api exec prisma migrate deploy
+pnpm --filter @hrms/api db:bootstrap-roles
+./scripts/restore-postgres.sh --yes
+```
+
+Doing it the other way silently loses the `hrms_auth`-specific RLS
+policies/grants — found by actually testing a restore onto a fresh
+cluster, not assumed. `pg_dump` only captures ONE database's contents;
+the `hrms_app`/`hrms_superadmin`/`hrms_auth` Postgres ROLES those
+policies reference are cluster-level objects a dump never includes, and
+`psql` doesn't stop on the resulting errors by default — the restore
+"completes" looking successful while silently missing role-scoped
+objects. See the restore script's own header comment for the full
+explanation, and `DECISIONS.md` for how this was actually verified
+(a full restore onto a truly empty Postgres cluster, confirmed correct
+only after fixing the order).
+
 ### Creating a company (no public signup)
 
 There is no signup UI by design. New tenants are provisioned via CLI, which

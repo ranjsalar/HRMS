@@ -7,6 +7,73 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 5: Automated backups
+
+`scripts/backup-postgres.sh` / `scripts/restore-postgres.sh` — plain
+bash, not Node/ts-node like this project's other admin scripts,
+deliberately: these run unattended from cron on the VPS host and need
+to work without a `pnpm install`/current `node_modules` being present.
+`pg_dump`/`psql` (via `docker compose exec` into the running `postgres`
+service) and `mc` (the MinIO client — downloaded once, cached; works
+against real AWS S3, DigitalOcean Spaces, or MinIO, since all speak the
+same S3 API) are the only two tools required.
+
+### Scheduling: host crontab, not a Docker sidecar
+
+One plain script + one crontab line, not an always-on backup container
+— matches this project's "don't over-engineer" standard, and a cron
+job that can fail loudly to a log file is simpler to reason about at
+3am than a container that needs its own restart/health semantics for
+something that only needs to run once a day.
+
+### Verified with a REAL backup and a REAL restore onto a genuinely empty Postgres cluster — not "backups exist"
+
+Ran a real `pg_dump` against the actual dev database (6 companies, real
+seeded data), uploaded it to a real local MinIO bucket (same
+reasoning as item 7 — self-hosted, zero external account, real S3 API,
+not assumed compatible), then restored it onto a **completely separate,
+freshly-created Postgres container** (not the same database it came
+from — that wouldn't prove anything) and confirmed the row counts and
+schema matched.
+
+### Real, non-obvious bug found by that restore: role-scoped RLS policies/grants silently failed on first attempt
+
+The first restore attempt "succeeded" (exit code 0, "Restore complete")
+but scrolled past dozens of `ERROR: role "hrms_app"/"hrms_superadmin"/
+"hrms_auth" does not exist` — `psql` doesn't stop on individual
+statement errors by default, so a cursory glance at "did it exit
+cleanly" would have missed this entirely. Checked what actually
+survived: the core `tenant_isolation` RLS policy and all real data were
+present, but the `hrms_auth`-specific policies
+(`auth_lockout_update`/`auth_lookup_select`) were silently missing.
+Root cause: `pg_dump` captures exactly one DATABASE's contents; Postgres
+ROLES are CLUSTER-level objects, never included in a database dump —
+restoring onto a cluster that doesn't already have `hrms_app`/
+`hrms_superadmin`/`hrms_auth` created means every GRANT and role-scoped
+POLICY statement in the dump references a role that doesn't exist yet,
+and fails individually while the rest of the script keeps going.
+Confirmed the fix by re-testing on a truly fresh cluster in the correct
+order — `prisma migrate deploy` + `db:bootstrap-roles` FIRST (creating
+the roles), restore SECOND — and this time `grep -i error` on the full
+restore output came back empty, with all three policies on `User`
+present and correct. `restore-postgres.sh`'s own header comment carries
+the full explanation and correct command order, not just README.md,
+since a real disaster-recovery scenario is exactly the moment someone
+is least likely to go looking for a separate doc.
+
+### Retention and off-VPS storage
+
+14-day retention (`mc rm --older-than`), configurable via
+`RETENTION_DAYS`. Off-VPS storage is the SAME deferred-DigitalOcean-
+Spaces situation as item 7 — the scripts are code-complete and really
+verified against MinIO, but no real bucket exists yet per the founder's
+explicit cost-driven deferral. A real deployment needs a real bucket
+before the daily cron job has anywhere real to upload to; until then,
+backups aren't actually scheduled anywhere production-real, which is
+consistent with there being no real production deployment yet either.
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 7: File storage (S3-compatible backend)
 
 `S3StorageService` (`common/storage/s3-storage.service.ts`) implements
