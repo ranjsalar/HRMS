@@ -20,6 +20,7 @@
     "db:verify-rls": "ts-node -T src/database/seeds/verify-rls.ts",
     "db:verify-auth-scope": "ts-node -T src/database/seeds/verify-hrms-auth-scope.ts",
     "cli:create-company": "ts-node -T src/database/seeds/create-company.ts",
+    "cli:generate-production-secrets": "ts-node -T src/database/seeds/generate-production-secrets.ts",
     "db:seed-frontend-auth-fixtures": "ts-node -T src/database/seeds/seed-frontend-auth-fixtures.ts"
   },
   "dependencies": {

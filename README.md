@@ -64,6 +64,28 @@ pnpm --filter @hrms/api db:verify-auth-scope         # proves the login role's g
 pnpm dev                     # runs api + web via Turborepo
 ```
 
+### Production secrets
+
+Every secret in `apps/api/.env.example` / `apps/api/.env.production.example`
+(Postgres role passwords, JWT/token-signing secrets, `FIELD_ENCRYPTION_KEY`,
+document/payslip URL-signing secrets) must be freshly generated for a real
+deployment — **never** reuse dev's or test's values. A secret shared across
+environments means a leak in one compromises all of them.
+
+```sh
+pnpm --filter @hrms/api cli:generate-production-secrets
+```
+
+Prints a ready-to-paste block of every generatable secret, freshly random on
+each run (including a correctly-formatted `FIELD_ENCRYPTION_KEY` — a real
+base64-encoded 32-byte value, not just a long string). Paste the output into
+that deployment's own `apps/api/.env.production` — created once, directly on
+the production host, gitignored, never committed (same convention as `.env`
+and `.env.test`). Remaining values in `.env.production.example` (hostnames,
+`CORS_ORIGINS`, `FRONTEND_URL`, SMTP provider credentials) are
+deployment-specific and not generatable — fill those in by hand. Run this
+once per real deployment, not once for the whole project.
+
 ### Creating a company (no public signup)
 
 There is no signup UI by design. New tenants are provisioned via CLI, which

@@ -34,6 +34,45 @@ let either look like something forgotten.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 2: Production secrets generation
+
+`pnpm --filter @hrms/api cli:generate-production-secrets`
+(`src/database/seeds/generate-production-secrets.ts`, following the same
+one-off-CLI-script convention as `bootstrap-roles.ts`/`create-company.ts`)
+prints every secret a real deployment needs, freshly random on each run:
+the three Postgres role passwords, `POSTGRES_PASSWORD`, and the five
+32+-byte app secrets (`JWT_ACCESS_SECRET`, `PASSWORD_RESET_SECRET`,
+`TWO_FACTOR_PENDING_SECRET`, `DOCUMENT_URL_SECRET`, `PAYSLIP_URL_SECRET`),
+plus a correctly-formatted `FIELD_ENCRYPTION_KEY` (a genuine
+base64-encoded 32-byte value via Node's `crypto.randomBytes`, not just a
+long string — this one has to be exactly right or field
+encryption/decryption breaks).
+
+Pure generation, no side effects — doesn't touch any database or write
+any file itself. Deliberately NOT auto-writing `.env.production`
+directly: the founder still needs to fill in deployment-specific,
+non-generatable values (real hostnames, `CORS_ORIGINS`, `FRONTEND_URL`,
+SMTP provider credentials) by hand regardless, so a copy-paste-then-edit
+workflow against the new `apps/api/.env.production.example` template is
+simpler than a script that half-writes a file the founder must then
+finish editing anyway.
+
+**Core rule, stated explicitly in both the script's own output and
+`.env.production.example`'s header**: never copy a value from
+`.env`/`.env.test`/`.env.example` into a real `.env.production` — every
+environment's secrets must be independently generated. This is the same
+reasoning already established for why `JWT_ACCESS_SECRET` and
+`TWO_FACTOR_PENDING_SECRET` are deliberately different secrets from each
+other (a compromise of one token type should never cascade into
+another) — extended here across environments, not just across token
+purposes within one environment.
+
+Run once per real deployment, not once for the whole project — noted in
+the README's new "Production secrets" section alongside the existing
+"Getting started" sequence.
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 1: Config hygiene — `envFilePath` keyed to `NODE_ENV`
 
 First item of the infrastructure pass, carried forward explicitly from
