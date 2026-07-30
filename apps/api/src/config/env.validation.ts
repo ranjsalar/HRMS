@@ -94,6 +94,20 @@ const envSchema = z.object({
   AUTH_LOGIN_RATE_LIMIT: z.coerce.number().default(10),
   AUTH_STRICT_RATE_LIMIT: z.coerce.number().default(5),
 
+  // Coarse-grained, app-wide IP throttle covering every endpoint,
+  // registered globally in AppModule (APP_GUARD) — deliberately looser
+  // and less endpoint-aware than AUTH_LOGIN_RATE_LIMIT/
+  // AUTH_STRICT_RATE_LIMIT above, which remain the tighter, purpose-
+  // specific layer for the three most sensitive routes. Originally
+  // planned to live at the reverse-proxy layer (Caddy) instead, per the
+  // architecture spec's suggestion — moved to the app level because
+  // Caddy's rate-limiting capability requires a non-stock, custom-built
+  // image (a third-party plugin, via xcaddy), real ongoing build/
+  // maintenance complexity not justified when this project already has
+  // a working, tested general-purpose throttling library as a
+  // dependency. See DECISIONS.md ("Infrastructure pass, item 4").
+  GENERAL_API_RATE_LIMIT: z.coerce.number().default(300),
+
   // Base URL of the WEB app (not this API) — used to build links inside
   // emails (password reset, and future notification types) that a user
   // clicks in their browser. Deliberately distinct from CORS_ORIGINS

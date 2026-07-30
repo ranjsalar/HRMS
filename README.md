@@ -86,6 +86,42 @@ and `.env.test`). Remaining values in `.env.production.example` (hostnames,
 deployment-specific and not generatable — fill those in by hand. Run this
 once per real deployment, not once for the whole project.
 
+### Production deployment
+
+`docker-compose.prod.yml` + `Caddyfile` — one VPS, Docker Compose,
+automatic HTTPS. Distinct from the dev-only root `docker-compose.yml`.
+See `DECISIONS.md` ("Infrastructure pass, item 4") for why Caddy, the
+same-origin `/api` routing design, and every real bug this sequence
+surfaced when actually run end-to-end.
+
+```sh
+# On the VPS, once: create apps/api/.env.production from
+# .env.production.example, generate real secrets (see "Production
+# secrets" above), fill in the deployment-specific values (real domain,
+# SMTP provider credentials) by hand.
+
+export DOMAIN=your.real.domain   # picked up by Caddy for automatic HTTPS
+docker compose -f docker-compose.prod.yml up -d --build
+
+# Migrations run as a ONE-OFF step, not from the long-running api
+# container (which deliberately has no Prisma CLI in its final image —
+# see DECISIONS.md). Build the "build" stage specifically, which still
+# has it:
+docker build -f apps/api/Dockerfile --target build -t hrms-api-migrate .
+docker run --rm --network hrms-prod_default --env-file apps/api/.env.production \
+  hrms-api-migrate sh -c "cd apps/api && node_modules/.bin/prisma migrate deploy && \
+    node_modules/.bin/ts-node -T src/database/seeds/bootstrap-roles.ts"
+```
+
+Postgres/Redis have no published host ports in this file — only Caddy is
+reachable from outside the VPS. `docker compose` auto-loads a root-level
+`.env` for its own `${VAR}` substitution (e.g. `POSTGRES_PASSWORD`)
+regardless of `-f` — a separate mechanism from `apps/api/.env.production`'s
+`env_file:` (which only supplies the `api` container's own runtime
+environment). Don't confuse the two; pass `--env-file` explicitly if a
+root `.env` for a different purpose already exists (e.g. this repo's own
+dev setup already has one).
+
 ### Creating a company (no public signup)
 
 There is no signup UI by design. New tenants are provisioned via CLI, which

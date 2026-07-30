@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { ThrottlerModule, seconds } from "@nestjs/throttler";
+import { GeneralApiThrottlerGuard } from "./common/guards/general-api-throttler.guard";
 import { AppController } from "./app.controller";
 import { resolveEnvFilePath, validateEnv } from "./config/env.validation";
 import { PrismaModule } from "./database/prisma/prisma.module";
@@ -31,6 +33,41 @@ import { GlobalExceptionFilter } from "./common/filters/global-exception.filter"
       envFilePath: resolveEnvFilePath(process.env.NODE_ENV),
       validate: validateEnv,
     }),
+    // ALL of this app's throttlers, in ONE registration — @nestjs/
+    // throttler's ThrottlerModule is internally @Global(), so a SECOND,
+    // separate .forRootAsync() call anywhere else (AuthModule used to
+    // have its own) silently collides on the same global provider
+    // tokens instead of coexisting: whichever registration "wins" is
+    // the only one any ThrottlerGuard anywhere in the app actually
+    // sees. Found live — after adding "generalApi" here in a separate
+    // registration, AuthController's existing "authLogin"/"authStrict"
+    // throttles stopped firing entirely (a real e2e regression, not a
+    // hypothetical). "generalApi" backs the global APP_GUARD below,
+    // applying to every route; "authLogin"/"authStrict" back
+    // AuthController's own @Throttle()/@SkipThrottle() decorators on
+    // its three specific routes (see auth.controller.ts and
+    // DECISIONS.md, "Rate limiting on auth endpoints" and
+    // "Infrastructure pass, item 4").
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          name: "generalApi",
+          ttl: seconds(60),
+          limit: config.getOrThrow<number>("GENERAL_API_RATE_LIMIT"),
+        },
+        {
+          name: "authLogin",
+          ttl: seconds(60),
+          limit: config.getOrThrow<number>("AUTH_LOGIN_RATE_LIMIT"),
+        },
+        {
+          name: "authStrict",
+          ttl: seconds(60),
+          limit: config.getOrThrow<number>("AUTH_STRICT_RATE_LIMIT"),
+        },
+      ],
+    }),
     PrismaModule,
     AuthModule,
     RbacModule,
@@ -47,10 +84,18 @@ import { GlobalExceptionFilter } from "./common/filters/global-exception.filter"
     // Global guards run in registration order, all before interceptors,
     // per Nest's request lifecycle. Full chain and rationale documented in
     // DECISIONS.md ("Guard chain order"):
-    //   AuthGuard -> MustChangePasswordGuard -> RbacGuard -> TenantScopeInterceptor
-    // AuthGuard resolves request.user first; everything downstream reads
-    // it. Routes opt out of AuthGuard (and therefore everything after it)
-    // with @Public().
+    //   GeneralApiThrottlerGuard -> AuthGuard -> MustChangePasswordGuard -> RbacGuard -> TenantScopeInterceptor
+    // The general throttle runs FIRST, before any auth work — same
+    // reasoning as the auth-specific throttlers in AuthModule: a
+    // throttled request should never reach password hashing, DB
+    // lookups, or anything else costly, and rejecting cheaply first is
+    // exactly what an outer rate limit is for. It applies uniformly to
+    // @Public() and authenticated routes alike (it has no concept of
+    // @Public() at all — that's AuthGuard's decorator, read one guard
+    // later). AuthGuard resolves request.user next; everything
+    // downstream reads it. Routes opt out of AuthGuard (and therefore
+    // everything after it) with @Public().
+    { provide: APP_GUARD, useClass: GeneralApiThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: MustChangePasswordGuard },
     { provide: APP_GUARD, useClass: RbacGuard },

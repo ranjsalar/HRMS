@@ -1,37 +1,44 @@
-# Mirrors .gitignore's spirit for the Docker build context — none of
-# this needs to be sent to the daemon, and node_modules especially would
-# make every build painfully slow (each stage installs its own anyway).
-node_modules/
-.pnpm-store/
-**/node_modules/
+# Mirrors .gitignore's spirit for the Docker build context. Unlike
+# .gitignore, a BARE pattern here (no "**/" prefix) only matches at the
+# build context ROOT, not at any depth — an earlier version of this file
+# used bare patterns for .env/.env.test/.env.production, which did NOT
+# exclude apps/api/.env (real secrets, including this project's own
+# generated production secrets) and they ended up baked directly inside
+# a built image layer. Found by actually inspecting a built image's
+# contents (`docker run ... ls apps/api/.env*`), not by reading this
+# file back. Every pattern below that needs to match at any depth (most
+# of them — this repo has per-package .env/dist/node_modules/etc, not
+# just root-level ones) now explicitly uses "**/".
 
-dist/
-build/
-.next/
-out/
+**/node_modules/
+.pnpm-store/
+
 **/dist/
+**/build/
 **/.next/
+**/out/
 
 .turbo/
 
 .git/
 .github/
 
-.env
-.env.test
-.env.production
-.env.*.local
+**/.env
+**/.env.test
+**/.env.production
+**/.env.local
+**/.env.*.local
 
-*.log
-npm-debug.log*
-pnpm-debug.log*
+**/*.log
+**/npm-debug.log*
+**/pnpm-debug.log*
 
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+**/.vscode/
+**/.idea/
+**/.DS_Store
+**/Thumbs.db
 
-coverage/
+**/coverage/
 
 # Root-level runtime uploads directory ONLY (DOCUMENT_STORAGE_PATH/
 # PAYSLIP_STORAGE_PATH) — anchored with a leading slash so this does NOT
@@ -42,8 +49,7 @@ coverage/
 # immediately by actually running `docker build`, not by inspection.
 /storage/
 
-*.tsbuildinfo
-.env.local
+**/*.tsbuildinfo
 
-*.md
+**/*.md
 !README.md

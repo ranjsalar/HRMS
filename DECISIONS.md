@@ -7,6 +7,160 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 4: Reverse proxy + TLS (Caddy)
+
+`docker-compose.prod.yml` (distinct from the dev-only root
+`docker-compose.yml`) + `Caddyfile`, built on top of item 3's
+Dockerfiles. Postgres/Redis have no published host ports in this file
+(only reachable from other containers on the compose network — real
+production shouldn't expose either to the host/internet at all); Caddy
+is the only thing bound to 80/443.
+
+### Caddy over Nginx
+
+Automatic HTTPS — a real Let's Encrypt certificate for a real public
+domain, or an automatic internal-CA certificate when none exists yet
+(`{$DOMAIN:localhost}` in the Caddyfile) — in about 40 lines total, no
+certbot/cron-renewal machinery to operate. Matches this project's
+"don't over-engineer" standard at solo-dev scale better than Nginx +
+certbot's more numerous moving parts.
+
+### Same-origin architecture: the frontend calls a relative `/api` path, not an absolute URL
+
+Caddy routes `/api/*` to the `api` service and everything else to
+`web`, both from the SAME public origin. `NEXT_PUBLIC_API_URL` is a
+Next.js build-time constant (inlined into the client bundle, not
+readable at runtime — a real framework constraint, not an oversight),
+so `docker-compose.prod.yml` passes it as a Docker build ARG set to the
+literal string `/api`. Verified this is safe before relying on it: grepped
+every `apiFetch`/`resolveApiUrl` call site and confirmed every one lives
+inside a `"use client"` component (browser-only, never server-rendered)
+— a relative string passed to the browser's own `fetch()` resolves
+against `window.location` automatically; Node's server-side `fetch()`
+would have thrown on a relative URL, which is why this needed checking
+before assuming it was safe, not after.
+
+### General API-wide rate limiting: moved to the app level, not Caddy
+
+The architecture spec's original suggestion — rate limiting at the
+proxy layer — turned out to need a non-stock Caddy build. `caddy:2-alpine`
+has no `rate_limit` directive at all; it ships from the third-party
+`caddy-ratelimit` plugin, which requires compiling a custom image via
+`xcaddy`. Confirmed by actually running `caddy validate` against the
+stock image (`unrecognized directive: rate_limit`), not assumed from
+Caddy's docs. Real ongoing build/maintenance complexity, for a solo
+founder, purely to relocate protection this project already has working
+and tested (`@nestjs/throttler`) into a different layer for its own
+sake — not justified. Implemented instead as a global `APP_GUARD` in
+`AppModule` (`GENERAL_API_RATE_LIMIT`, default 300/60s per IP,
+per-endpoint — see below for why "per-endpoint" and not "one shared
+budget for the whole API").
+
+### Two real, non-obvious `@nestjs/throttler` bugs found wiring this up
+
+1. **`ThrottlerModule` is internally `@Global()`.** A second, separate
+   `.forRootAsync()` call in `AppModule` (alongside AuthModule's
+   existing one for "authLogin"/"authStrict") silently collided on the
+   same global provider tokens instead of coexisting — whichever
+   registration "wins" is the only one any `ThrottlerGuard` anywhere in
+   the app actually sees. Result: AuthController's existing, already-
+   shipped, already-tested throttling on login/password-reset/2FA
+   **stopped firing entirely** (real e2e test failures — `rate-
+   limiting.e2e-spec.ts` expected 429s and got 401s instead — not a
+   hypothetical). Fixed by consolidating into ONE registration (now
+   living in `AppModule`, since it's global anyway), with all three
+   named throttlers together; `AuthModule` no longer registers
+   `ThrottlerModule` itself, only references the shared names via its
+   existing `@Throttle()`/`@SkipThrottle()` decorators.
+2. **A plain `ThrottlerGuard` used as a global `APP_GUARD` would have
+   throttled the ENTIRE API to 5-10 requests/min.** The guard applies
+   every throttler registered in its scope to every route it covers —
+   for a global guard, that's every route in the app, including
+   AuthController's much stricter "authLogin"(10)/"authStrict"(5)
+   limits, meant only for three specific routes. Fixed with a thin
+   `GeneralApiThrottlerGuard` subclass (`common/guards/
+   general-api-throttler.guard.ts`) that filters `this.throttlers` down
+   to only `"generalApi"` after the base class populates it — the only
+   way found to make one guard enforce a DIFFERENT subset of a shared
+   registration than another. Verified with a dedicated test
+   (`general-rate-limiting.e2e-spec.ts`) that overrides
+   `GENERAL_API_RATE_LIMIT` to 8 for its own app instance and asserts a
+   real 429 at request 9 on a plain `/health` call — specifically NOT
+   at request 6 (which is what `authStrict`'s limit would produce if
+   the filtering silently broke), so this test would catch a regression
+   in either direction, not just "did it throttle at all."
+
+Consequence of the per-handler keying this library uses (confirmed
+earlier in the original rate-limiting pass): "general API-wide" means
+every ENDPOINT independently gets its own 300/60s budget from a given
+IP, not one shared counter across the whole API surface — heavy
+legitimate use of one endpoint can never accidentally throttle a
+different one. Considered this the more sensible interpretation, not
+just an artifact of the library's design.
+
+### Two real bugs found only by actually deploying the full stack locally, not by reading the compose file back
+
+1. **A DB password containing `/`/`+` broke Prisma's connection-string
+   parser** (`P1013: invalid port number in database URL`) the moment a
+   freshly-generated password was actually plugged into a real
+   `DATABASE_URL`. Plain base64 isn't URL-safe. Fixed
+   `generate-production-secrets.ts` to use base64URL specifically for
+   the four DB passwords (which get embedded in connection strings) —
+   every other secret stays plain base64 (unaffected, never URL-parsed).
+2. **`.dockerignore` pattern semantics differ from `.gitignore` in a way
+   that leaked real secrets into a built image.** A bare pattern (no
+   `**/` prefix) only matches at the build context ROOT, not at any
+   depth — the version written for item 3 excluded a hypothetical root
+   `.env` but did NOT exclude `apps/api/.env`, `apps/api/.env.test`, or
+   `apps/api/.env.production`, which all got copied directly into a
+   built image layer, including this project's own real generated
+   production secrets. Found by literally listing a built image's
+   contents (`docker run ... find /workspace -iname '.env*'`), not by
+   reading the ignore file back — this class of bug is specifically the
+   kind that "looks right" on inspection. Fixed by rewriting every
+   pattern with an explicit `**/` prefix. **The specific secrets
+   generated and used for this local verification were displayed in
+   tool output during this session and must be treated as compromised
+   — a real deployment must generate its own, never reuse these.**
+3. **`docker compose` auto-loads a root-level `.env` for `${VAR}`
+   substitution regardless of which compose file is run with `-f`.**
+   This project already has a root `.env` (dev's Postgres credentials,
+   used by the separate dev `docker-compose.yml`) — running
+   `docker-compose.prod.yml` without an explicit `--env-file` silently
+   pulled DEV's `POSTGRES_PASSWORD` in for the PROD compose file's own
+   variable substitution, a completely different mechanism from
+   `apps/api/.env.production`'s `env_file:` (which only supplies the
+   `api` service's own runtime environment, not compose-file-level
+   substitution). A real deployment needs to be aware this is two
+   separate mechanisms with two separate files, or pass `--env-file`
+   explicitly — noted here since it's exactly the kind of thing that
+   works by accident in a quick test and fails confusingly for real.
+
+### Verification
+
+Full local production deployment, for real: built both images fresh,
+ran migrations + role bootstrap + seed via a dedicated one-off container
+(the build stage, which still has the Prisma CLI the runtime image
+deliberately excludes), brought up Postgres/Redis/api/web/Caddy
+together, and confirmed through the actual proxy over HTTPS (Caddy's
+internal CA, `curl -k`): a real page loads (200), HTTP→HTTPS redirect
+works automatically (308), all security headers present (HSTS, CSP,
+X-Content-Type-Options, Referrer-Policy), `/api/*` correctly reaches the
+API (real login, real Postgres round-trip, real JWT), and static JS
+assets serve through the proxy too. Confirmed the final runtime images
+contain zero `.env*` files after the dockerignore fix. **Not verified
+this session**: real Let's Encrypt certificate issuance (needs a real
+public domain + DNS, which doesn't exist yet) and actual browser-side
+JS execution/CSP-violation-free interactivity (no headless browser
+available) — both flagged explicitly rather than assumed working;
+recommend one real manual browser click-through once a real domain
+exists, low risk given the CSP's `'unsafe-inline'` is deliberately
+permissive for exactly this reason. Full backend unit + e2e suites
+re-run green after all app-level changes (`AppModule`/`AuthModule`
+throttler consolidation).
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 3: Production Dockerfiles
 
 `apps/api/Dockerfile` and `apps/web/Dockerfile` — multi-stage builds,

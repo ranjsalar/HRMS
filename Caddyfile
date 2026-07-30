@@ -1,0 +1,47 @@
+# Reverse proxy for the production compose stack (docker-compose.prod.yml).
+# See DECISIONS.md ("Infrastructure pass, item 4") for why Caddy over
+# Nginx: automatic HTTPS (real Let's Encrypt for a real public domain,
+# automatic internal-CA TLS for local/no-domain testing — same config,
+# zero certbot/cron-renewal machinery to operate) in a file this short,
+# matching this project's "don't over-engineer" standard at solo-dev
+# scale. General API-wide rate limiting (deferred from the earlier
+# @nestjs/throttler pass — see AuthModule's own comment) lives here too.
+
+{$DOMAIN:localhost} {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubdomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# 'unsafe-inline' on script/style is a deliberate baseline choice,
+		# not an oversight — Next.js's standalone output injects inline
+		# hydration data/critical-CSS without nonce support wired in by
+		# default (that needs a middleware.ts generating a per-request
+		# nonce, real extra app code, not just proxy config). A stricter
+		# nonce-based CSP is a reasonable future follow-up, not built
+		# speculatively here. frame-ancestors 'none' (clickjacking
+		# protection) doesn't have this problem — kept strict.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# General API-wide rate limiting deliberately does NOT live here —
+	# see DECISIONS.md ("Infrastructure pass, item 4: reverse proxy +
+	# TLS"). Caddy has no rate-limiting directive in its stock build;
+	# the `rate_limit` directive requires a custom image compiled with
+	# the third-party caddy-ratelimit plugin via xcaddy — real ongoing
+	# build/maintenance complexity for a solo founder, to move protection
+	# this project already has working and tested (@nestjs/throttler)
+	# into a different layer for its own sake. Implemented instead as a
+	# global app-level throttle (AppModule's APP_GUARD) — see
+	# GENERAL_API_RATE_LIMIT in env.validation.ts.
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

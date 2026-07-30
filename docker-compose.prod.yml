@@ -1,0 +1,102 @@
+# Production topology — one VPS, Docker Compose (per the project plan's
+# stated deployment target). Distinct from the root docker-compose.yml,
+# which is dev-only (bind-mounted source, `nest start --watch`, MailDev,
+# host-published Postgres/Redis for local tooling). See DECISIONS.md
+# ("Infrastructure pass, item 4: reverse proxy + TLS").
+name: hrms-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No published host port, unlike dev's compose file — production
+    # Postgres is reachable only from other containers on this compose
+    # network, never from the host or the internet directly.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - documents_data:/app/storage/documents
+      - payslips_data:/app/storage/payslips
+    # No published host port — only Caddy (and other containers on this
+    # network) can reach it, never the host/internet directly.
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Relative, not an absolute origin — Caddy serves both web and
+        # /api/* from the SAME public origin (see Caddyfile), so the
+        # browser's own fetch() resolves this against window.location
+        # automatically. Verified this is safe: every apiFetch call site
+        # is inside a "use client" component (browser-only, never
+        # server-rendered), so there's no Node-side fetch() that would
+        # need an absolute URL instead.
+        NEXT_PUBLIC_API_URL: /api
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # Real deployment: export DOMAIN=your.real.domain before `docker
+      # compose up` — Caddy then automatically obtains a real Let's
+      # Encrypt certificate for it. Unset/local testing: defaults to
+      # "localhost", where Caddy automatically uses its own internal CA
+      # instead (self-signed, not publicly trusted, but real TLS
+      # end-to-end) — same Caddyfile, no other change. See DECISIONS.md
+      # for what was and wasn't verified given no real domain exists yet.
+      DOMAIN: ${DOMAIN:-localhost}
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres_data:
+  redis_data:
+  documents_data:
+  payslips_data:
+  caddy_data:
+  caddy_config:

@@ -22,14 +22,14 @@ function main(): void {
     "# hrms (schema owner / DATABASE_MIGRATE_URL) — set when the",
     "# container/role is first created, not via bootstrap-roles.ts. If",
     "# using docker-compose.yml's postgres service, this is POSTGRES_PASSWORD.",
-    `POSTGRES_PASSWORD=${randomSecret()}`,
+    `POSTGRES_PASSWORD=${randomUrlSafeSecret()}`,
     "",
     "# hrms_app / hrms_superadmin / hrms_auth — set by",
     "# `pnpm --filter @hrms/api db:bootstrap-roles` after migrating,",
     "# reading exactly these three variable names.",
-    `HRMS_APP_DB_PASSWORD=${randomSecret()}`,
-    `HRMS_SUPERADMIN_DB_PASSWORD=${randomSecret()}`,
-    `HRMS_AUTH_DB_PASSWORD=${randomSecret()}`,
+    `HRMS_APP_DB_PASSWORD=${randomUrlSafeSecret()}`,
+    `HRMS_SUPERADMIN_DB_PASSWORD=${randomUrlSafeSecret()}`,
+    `HRMS_AUTH_DB_PASSWORD=${randomUrlSafeSecret()}`,
     "",
     "# ── Application secrets ─────────────────────────────────────────",
     `JWT_ACCESS_SECRET=${randomSecret()}`,
@@ -60,6 +60,23 @@ function main(): void {
 /** 48 random bytes, base64-encoded — same as every "openssl rand -base64 48" comment throughout .env.example. */
 function randomSecret(): string {
   return randomBytes(48).toString("base64");
+}
+
+/**
+ * Same entropy as randomSecret(), but base64URL-encoded (RFC 4648 §5:
+ * "-"/"_" instead of "+"/"/", no "=" padding) — for the four DB
+ * passwords specifically, which get embedded directly inside
+ * DATABASE_*_URL connection strings. Plain base64's "+", "/", and "="
+ * are all meaningful characters in a URL and broke Prisma's own
+ * connection-string parser ("P1013: invalid port number in database
+ * URL") the first time a generated password was actually plugged into
+ * one — found by literally running a real migration against a real
+ * generated password, not by reading the RFC. Every OTHER secret below
+ * stays plain base64 (matching this project's existing "openssl rand
+ * -base64 48" convention) since none of them are ever embedded in a URL.
+ */
+function randomUrlSafeSecret(): string {
+  return randomBytes(48).toString("base64url");
 }
 
 main();
