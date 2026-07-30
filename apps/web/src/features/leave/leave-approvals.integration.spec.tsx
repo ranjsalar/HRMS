@@ -129,7 +129,25 @@ describe("LeaveApprovals — real backend integration", () => {
       // Give the real fetch(es) time to land, then assert the row for
       // THIS admin's own just-created request is never present — not
       // just "not yet," but genuinely absent once loading has settled.
-      await screen.findByText(/Pending leave approvals|No pending leave requests\./, {}, { timeout: 15000 });
+      // Waits for EITHER the empty-state message or at least one real
+      // row, via queryByText/querySelector (never throw on zero-or-many
+      // matches) rather than findByText with an either/or regex — the
+      // "Pending leave approvals" heading is static chrome that's always
+      // present, so on a genuinely empty queue (a fresh DB with no other
+      // pending approvals — exactly what CI provides, unlike a shared
+      // local dev DB that's accumulated stray pending requests over
+      // time) BOTH the heading and the empty message match at once,
+      // and findByText throws "Found multiple elements" instead of
+      // waiting. Found live on the first real CI run against a
+      // genuinely fresh database, not by inspection.
+      await waitFor(
+        () => {
+          const hasEmptyMessage = screen.queryByText("No pending leave requests.");
+          const hasAnyRow = container.querySelector("li[data-request-id]");
+          expect(hasEmptyMessage ?? hasAnyRow).toBeTruthy();
+        },
+        { timeout: 15000 },
+      );
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect(container.querySelector(`li[data-request-id="${created.id}"]`)).toBeNull();
     } finally {

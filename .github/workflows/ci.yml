@@ -131,7 +131,16 @@ jobs:
       SMTP_SECURE: "false"
       SMTP_USER: ""
       SMTP_PASSWORD: ""
-      EMAIL_FROM: "HRMS CI <no-reply@hrms.ci>"
+      # Must match .env.test's exact value, not an arbitrary CI-specific
+      # one — password-reset-delivery.e2e-spec.ts asserts this literal
+      # address, since a real deployment would want its OWN sender
+      # identity, not one silently swapped by whichever environment ran
+      # the test. Found on a local reproduction of the third real CI
+      # run's failure (WebFetch couldn't extract job logs from GitHub's
+      # rendered UI without auth, so this was verified by running the
+      # exact CI sequence against fresh, isolated local containers
+      # instead — see DECISIONS.md).
+      EMAIL_FROM: "HRMS Test <no-reply@hrms.test>"
       AUTH_LOGIN_RATE_LIMIT: "10"
       AUTH_STRICT_RATE_LIMIT: "5"
       # Regression-test canary (test/env-isolation.e2e-spec.ts) — see
@@ -240,7 +249,7 @@ jobs:
       SMTP_SECURE: "false"
       SMTP_USER: ""
       SMTP_PASSWORD: ""
-      EMAIL_FROM: "HRMS CI <no-reply@hrms.ci>"
+      EMAIL_FROM: "HRMS Test <no-reply@hrms.test>"
       AUTH_LOGIN_RATE_LIMIT: "200"
       AUTH_STRICT_RATE_LIMIT: "100"
       NEXT_PUBLIC_API_URL: http://localhost:3001/api

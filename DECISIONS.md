@@ -34,6 +34,117 @@ let either look like something forgotten.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 8: CI (GitHub Actions)
+
+`.github/workflows/ci.yml` — four jobs on every push/PR: `lint-typecheck`,
+`backend-unit` (no services needed — confirmed no unit spec touches a
+real Postgres connection), `backend-e2e` (real Postgres/Redis/MailDev
+service containers, full role-bootstrap/RLS-verification sequence from
+README.md, then the real e2e suite), and `frontend` (builds and boots a
+real API instance, seeds the frontend's stable fixture accounts, then
+runs `apps/web`'s suite against it — its `*.integration.spec.tsx` files
+hit real HTTP, matching this project's no-mocking philosophy for the
+frontend too, not just the backend).
+
+No GitHub remote existed before this pass (zero commits, in fact — see
+the separate note on the initial commit). Repo created by the founder;
+pushed the initial commit and this workflow directly per their explicit
+instruction.
+
+### Four real bugs found by the first few actual CI runs — none guessable from local-only testing
+
+Every prior step this session ran real infrastructure locally before
+calling anything done; CI is the first time this project's code has run
+on infrastructure this session never touched (a clean checkout, a
+different OS, ephemeral fresh containers with no accumulated local
+state). That gap surfaced four genuine bugs on the first three runs,
+none of them CI-configuration typos in the trivial sense — each is a
+real fact about the app or its test suite that local runs never had a
+chance to expose:
+
+1. **`lint-typecheck` never ran `prisma generate`.** Without it,
+   `@prisma/client`'s generated types don't exist, and
+   `@typescript-eslint`'s type-aware `no-unsafe-*` rules degrade to
+   treating every Prisma-touching value as `any` — 10 false errors
+   across files nobody touched this pass (`tenant-scope.interceptor.ts`,
+   `seed.ts`, `rbac.guard.ts`, `global-exception.filter.ts`,
+   `current-permission-scope.decorator.ts`). Every other job already ran
+   `prisma generate`; this job was the one gap. Fixed by adding it.
+
+2. **MailDev's image ships a broken Docker `HEALTHCHECK`, and GitHub
+   Actions waits on it.** `docker ps` had already shown this container
+   reporting "unhealthy" in local dev all session (a known, previously
+   accepted cosmetic quirk, since the actual REST API worked fine
+   locally) — but GitHub Actions' service-container startup genuinely
+   blocks on a container's Docker-level health status and fails the job
+   if it never turns healthy, which local dev never cared about. Fixing
+   this took two attempts: the first override (`wget --spider
+   http://localhost:1080/`) failed identically to the broken default.
+   Traced by exec'ing into the actual running container and testing
+   directly (`docker exec ... wget ...`, then `netstat` inside the
+   container): the app listens on port 1080 **IPv4-only**
+   (`0.0.0.0:1080`), but `localhost` resolves to IPv6 (`::1`) first
+   inside this image, which has nothing listening there — "Connection
+   refused." Using `127.0.0.1` explicitly fixed it. Verified by testing
+   the exact command inside the container before changing the workflow,
+   not by guessing and re-pushing repeatedly.
+
+3. **`password-reset-delivery.e2e-spec.ts` hardcodes `expect(mail.from[0]
+   .address).toBe("no-reply@hrms.test")`** — matching `.env.test`'s exact
+   value. CI's `backend-e2e` job doesn't read `.env.test` at all (no such
+   file exists in a fresh CI checkout — gitignored, never committed); it
+   sets env vars directly via the workflow's own `env:` block, and that
+   block had invented its own CI-specific `EMAIL_FROM`
+   (`no-reply@hrms.ci`) instead of matching `.env.test`'s real value.
+   Fixed by setting CI's `EMAIL_FROM` to the literal same value
+   `.env.test` uses — the correct mental model is "CI's `backend-e2e`
+   job env stands in for `.env.test`," not "CI gets its own arbitrary
+   values wherever a test happens not to assert on the exact string."
+
+4. **A genuinely latent bug in `leave-approvals.integration.spec.tsx`**,
+   masked by this project's own shared local dev database having
+   accumulated stray pending-approval state over the session: `await
+   screen.findByText(/Pending leave approvals|No pending leave
+   requests\./, ...)` throws `TestingLibraryElementError: Found multiple
+   elements` whenever the queue is GENUINELY empty, because the static
+   heading ("Pending leave approvals," always rendered) and the empty
+   state message ("No pending leave requests.") are BOTH present in the
+   DOM simultaneously in that case — `findByText` requires exactly one
+   match. Locally this never fired because the dev DB was never actually
+   empty of pending approvals by the time this test ran. CI's genuinely
+   fresh, empty database exposed it immediately. Fixed by replacing the
+   ambiguous either/or `findByText` with a `waitFor` using
+   `queryByText`/`querySelector` (which tolerate zero-or-many matches),
+   checking for either signal without asserting exact-one-match
+   semantics — the real intent was "wait until loading has settled,"
+   which doesn't require picking exactly one of two simultaneously-valid
+   signals.
+
+### How these were diagnosed without a GitHub-authenticated log viewer
+
+Unauthenticated `curl`/`WebFetch` against the GitHub Actions API can read
+run/job status and check-run annotations for a public repo, but NOT
+download full job logs (`403 — Must have admin rights`), and
+`WebFetch`'s HTML-to-markdown rendering of the Actions UI didn't
+reliably surface full jest output either (JS-rendered content). `gh` CLI
+isn't installed in this environment. For bug #4 specifically (no useful
+annotation text at all, just "Process completed with exit code 1"),
+reproduced the exact failure by spinning up fresh, isolated Postgres/
+Redis/MailDev containers on non-conflicting local ports and running the
+EXACT command sequence from the workflow file against them with the
+same env values — this surfaced the real jest/vitest output directly,
+without needing GitHub's log UI at all, and is arguably a more reliable
+diagnostic method than log-scraping would have been anyway.
+
+### Verification
+
+Each fix verified against the same local reproduction before pushing,
+then confirmed for real against actual GitHub-hosted runners (not just
+assumed from the local repro) via the Actions API. Local reproduction
+containers torn down and normal dev environment restored afterward.
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 2: Production secrets generation
 
 `pnpm --filter @hrms/api cli:generate-production-secrets`
