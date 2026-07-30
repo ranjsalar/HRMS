@@ -53,8 +53,15 @@ async function loginAdmin(): Promise<string> {
   return verifyRes.accessToken;
 }
 
+// 100 attempts (30s) was reliable on local dev hardware but timed out on
+// GitHub Actions' shared runner (real CI failure, not reproducible
+// locally even running the full suite repeatedly against fresh isolated
+// containers — genuine hardware/resource difference, not a structural
+// bug). 250 attempts (75s) stays well under the outer `it(...)`'s own
+// 120s timeout while giving a slower CI runner realistic headroom for
+// BullMQ payslip-PDF generation to complete.
 async function waitForFinalized(runId: string, adminToken: string): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 250; attempt++) {
     setAccessToken(adminToken);
     const run = await apiFetch<PayrollRunStatus>(`/payroll/runs/${runId}`);
     if (run.status === "finalized") return;

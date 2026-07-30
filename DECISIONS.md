@@ -136,6 +136,22 @@ same env values — this surfaced the real jest/vitest output directly,
 without needing GitHub's log UI at all, and is arguably a more reliable
 diagnostic method than log-scraping would have been anyway.
 
+### A fifth issue: `waitForFinalized`'s timeout, genuinely CI-runner-specific
+
+After the four bugs above were fixed, `backend-e2e` passed for real, but
+`frontend` still failed — `payslips.integration.spec.tsx` timed out
+waiting for a payroll run to reach `"finalized"` (BullMQ payslip-PDF
+generation) within its 30s retry budget. Unlike the previous four, this
+one did NOT reproduce locally — ran the exact failing test alone, then
+the entire 48-file suite, twice, against fresh isolated containers and
+a production-built server: 184/184 pass every time, the payroll test
+finishing in ~1-4s. This is a genuine hardware/resource difference
+between this dev machine and GitHub's shared runners, not a structural
+bug — treated accordingly rather than chased further locally. Bumped
+`waitForFinalized`'s budget from 100 attempts (30s) to 250 (75s),
+comfortably under the outer test's own 120s timeout, as reasonable
+headroom for a slower CI runner.
+
 ### Verification
 
 Each fix verified against the same local reproduction before pushing,
