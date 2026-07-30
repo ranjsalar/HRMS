@@ -9,6 +9,7 @@ import {
 import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { JsonWebTokenError, NotBeforeError, TokenExpiredError } from "jsonwebtoken";
+import * as Sentry from "@sentry/node";
 
 interface ErrorBody {
   statusCode: number;
@@ -44,6 +45,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         `${request.method} ${request.originalUrl} -> ${status}: ${describe(exception)}`,
         exception instanceof Error ? exception.stack : undefined,
       );
+      // Same threshold as server-side logging above — genuine 5xx only,
+      // never the expected 4xx client errors (validation failures, 401s,
+      // etc.) that this filter also passes through. A no-op call when
+      // SENTRY_DSN is unset (Sentry.init() was never called — see
+      // monitoring/sentry.ts), so this line is safe in every current
+      // environment, not just wherever monitoring is actually active.
+      Sentry.captureException(exception);
     }
 
     response.status(status).json({

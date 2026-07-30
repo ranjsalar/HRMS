@@ -66,6 +66,11 @@ services:
         # server-rendered), so there's no Node-side fetch() that would
         # need an absolute URL instead.
         NEXT_PUBLIC_API_URL: /api
+        # Empty by default — genuinely optional, error monitoring stays
+        # inactive until the founder creates a real Sentry account and
+        # exports NEXT_PUBLIC_SENTRY_DSN before `docker compose build`.
+        # See DECISIONS.md ("Infrastructure pass, item 6").
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
     restart: unless-stopped
     depends_on:
       - api

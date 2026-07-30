@@ -110,6 +110,15 @@ const envSchema = z.object({
 
   CORS_ORIGINS: z.string().default(""),
 
+  // Optional — unset in every environment right now (dev, test, CI, and
+  // this project's current production compose stack). When unset,
+  // monitoring/sentry.ts's initSentry() is a deliberate no-op; when the
+  // founder creates a real Sentry account and provides a DSN, error
+  // reporting activates via this one env var, no code change. See
+  // DECISIONS.md ("Infrastructure pass, item 6: error + uptime
+  // monitoring").
+  SENTRY_DSN: z.string().optional(),
+
   // Auth-endpoint IP throttle limits (per 60s window) — see AuthModule
   // and DECISIONS.md. Defaults are the production-appropriate values.
   // Overridden higher in dev's .env: the dev API server is a single

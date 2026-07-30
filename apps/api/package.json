@@ -33,6 +33,7 @@
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/throttler": "^6.3.0",
     "@prisma/client": "^5.22.0",
+    "@sentry/node": "^10.69.0",
     "argon2": "^0.41.1",
     "bullmq": "^5.81.2",
     "class-transformer": "^0.5.1",

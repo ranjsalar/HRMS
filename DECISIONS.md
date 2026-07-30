@@ -7,6 +7,98 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 6: Error + uptime monitoring
+
+`@sentry/node` (`apps/api/src/monitoring/sentry.ts`, wired into
+`main.ts`'s bootstrap and `GlobalExceptionFilter`) and `@sentry/nextjs`
+(`apps/web/src/instrumentation.ts` + `instrumentation-client.ts` +
+`global-error.tsx`) — both **deliberately inactive** (`SENTRY_DSN`/
+`NEXT_PUBLIC_SENTRY_DSN` unset everywhere right now) per the founder's
+explicit deferral: they understand the Sentry free tier requires no
+card, but are holding off creating the account to avoid a context-
+switch. Code-complete; activates via one env var once they do, no code
+change.
+
+### Verified against real, self-hosted GlitchTip — not just "doesn't crash without a DSN"
+
+Same reasoning as MailDev (email) and MinIO (S3 storage) elsewhere in
+this pass: GlitchTip is open-source, Sentry-protocol-compatible, and
+self-hostable, so this could be verified for real without needing the
+founder's deferred Sentry account. Stood up a real GlitchTip instance
+(Postgres + Redis + web + worker, all in Docker), created a real
+organization/project/DSN via its Django management shell (no web UI
+click-through available in this environment), and confirmed BOTH apps'
+wiring end-to-end:
+
+- **`apps/api`**: called the actual `initSentry()` + `Sentry.captureException`
+  code path `GlobalExceptionFilter` uses, with a real DSN — the error
+  appeared as a real GlitchTip Issue with the exact message thrown.
+- **`apps/web`**: harder to verify — a raw Node/tsx script calling
+  `@sentry/nextjs`'s exports directly failed (`Sentry.captureException
+  is not a function`), because that package's server/client conditional
+  exports only resolve correctly through Next.js's own bundler/runtime,
+  not a plain `import()` outside it. Verified instead through the REAL
+  runtime: temporarily added a gated (`THROW_TEST_ERROR=1`) throw to the
+  one genuine Server Component in this app (`layout.tsx` — every actual
+  page is `"use client"`, confirmed by grep before relying on this),
+  built and ran the real standalone production server with a real DSN,
+  hit it with a real HTTP request, got a real 500, and confirmed the
+  exact error landed in GlitchTip via `instrumentation.ts`'s
+  `onRequestError` hook. Reverted the temporary throw immediately after
+  — never landed in a commit.
+
+GlitchTip's worker needed to be started as a SEPARATE process from its
+web container for events to actually get processed (not just accepted
+by the ingest endpoint) — the first attempt looked like it worked
+(`Sentry.flush()` returned `true`, meaning the HTTP POST succeeded) but
+no Issue appeared until a worker was actually consuming the queue. A
+reminder that "the SDK reported success" and "the server actually
+processed and stored it" are different claims — checked both.
+
+### Fixed three real build-time warnings, not suppressed
+
+`@sentry/nextjs`'s build wrapper (`withSentryConfig` in `next.config.ts`)
+surfaced three actionable issues on the first real build: a deprecated
+config option (`disableLogger` → `webpack.treeshake.removeDebugLogging`),
+a missing `onRouterTransitionStart` export needed for navigation
+instrumentation, and a missing `global-error.tsx` for React render-error
+capture. Fixed all three properly (not via the suppression env var
+Sentry itself offers) — `global-error.tsx` in particular is genuinely
+valuable, not just warning-silencing: it's the only way this app
+captures React render errors specifically, as opposed to the
+request/exception-level errors `GlobalExceptionFilter`
+(`apps/api`)/`onRequestError` (`apps/web`) already handle.
+
+### Scope: errors only, not performance/tracing
+
+`tracesSampleRate: 0` on both SDKs — this pass is "capture real errors,"
+not a full APM/tracing setup nobody asked for. `onRouterTransitionStart`
+is wired (removes a build warning) but is a no-op in practice given the
+0% trace sample rate.
+
+### Uptime monitoring: no code, a recommendation instead
+
+Genuinely different from error monitoring — an uptime checker needs a
+real public URL to poll, which doesn't exist until a real domain is
+deployed (item 4's Caddy config is ready, but real DNS/hosting doesn't
+exist yet either). Nothing to build: `GET /api/health` (`apps/api`,
+already exists, already `@Public()`) and `GET /` (`apps/web`) are both
+already suitable targets. Recommend UptimeRobot's free tier (50
+monitors, 5-minute checks, no card required) once a real domain exists
+— pick this up as part of whatever session actually deploys to a real
+domain, not now.
+
+### Verification
+
+Full backend unit suite (21 files/130 tests) and e2e suite (11
+files/80 tests) re-run green after wiring `Sentry.captureException`
+into `GlobalExceptionFilter`. Full frontend suite re-run green after
+reverting the temporary test throw. GlitchTip infrastructure and the
+temporary throw both fully torn down/reverted — nothing from this
+verification pass persists in the codebase or running environment.
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 5: Automated backups
 
 `scripts/backup-postgres.sh` / `scripts/restore-postgres.sh` — plain
