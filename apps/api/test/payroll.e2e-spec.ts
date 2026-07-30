@@ -107,11 +107,23 @@ describe("Payroll (e2e)", () => {
     throw new Error(`Unexpected login status "${body.status}"`);
   }
 
+  // 30 attempts (9s) was reliable on local dev hardware but too close to
+  // Jest's own default 5000ms per-test timeout to begin with — the OUTER
+  // Jest timeout could kill the test before this loop's own budget even
+  // expired, on ANY machine, let alone a slower one. Real CI failure
+  // confirmed this: apps/web's payslips.integration.spec.tsx hit the
+  // identical underlying wait (same BullMQ payslip-PDF job) and got the
+  // same fix earlier in this pass — this backend e2e test waits on the
+  // exact same job but was missed at the time, since it lives in a
+  // different file/app than the one that failed first. 80 attempts
+  // (24s) plus the test's own explicit 30s Jest timeout below (see the
+  // call site) gives real margin on both the inner retry budget and the
+  // outer test-level ceiling, not just barely enough to pass once.
   async function waitForRunStatus(
     runIdToCheck: string,
     adminToken: string,
     expectedStatus: string,
-    maxAttempts = 30,
+    maxAttempts = 80,
   ): Promise<PayrollRunBody> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const res = await request(server())
@@ -350,7 +362,7 @@ describe("Payroll (e2e)", () => {
         .expect(200);
       const payslips = listRes.body as PayslipBody[];
       expect(payslips.every((p) => p.pdfUrl !== null)).toBe(true);
-    });
+    }, 30000); // waitForRunStatus's own 80-attempt (24s) budget. // default just because this one needs it. Comfortably above // hung test; other tests in this suite shouldn't get a longer // legitimately long-running async wait on a real BullMQ job, not a // Per-test timeout, not a global Jest config change — this is a
 
     it("an employee can retrieve their own finalized payslip, byte-for-byte, but NOT another employee's — even in the same company", async () => {
       const myRes = await request(server())
@@ -429,6 +441,6 @@ describe("Payroll (e2e)", () => {
       const { url } = signedUrlRes.body as SignedUrlResponseBody;
       const downloadRes = await request(server()).get(url).expect(200);
       expect((downloadRes.body as Buffer).subarray(0, 5).toString("latin1")).toBe("%PDF-");
-    });
+    }, 30000); // underlying reason. // the previous test. Same 30s budget as that test, for the same // once that call was made slow, not just as a downstream failure of // DECISIONS.md): this test independently hit Jest's 5000ms default // testing with an artificial delay injected into that method (see // and had no explicit timeout either. Found by actually stress- // exact same operation the previous test waits on via the queue — // This test also directly calls payrollPdfService.processRun() — the
   });
 });

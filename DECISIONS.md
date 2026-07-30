@@ -7,6 +7,71 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-30 — CI follow-up: the earlier payroll timeout fix missed a second, backend-side test waiting on the same job
+
+The item-8 CI entry's "fifth issue" fixed `apps/web/src/features/payroll/
+payslips.integration.spec.tsx`'s timeout, reasoning that a slower CI
+runner needed more headroom for BullMQ payslip-PDF generation. A
+SEPARATE re-run of the exact same CI commit failed again, in the same
+job, on `apps/api/test/payroll.e2e-spec.ts` — a different file, in a
+different app, waiting on the SAME underlying job, that never got the
+same fix because it's a different test entirely. Founder caught this
+and correctly identified it as a real, reproducible gap, not more
+flakiness — confirmed by reading the actual failure: `"the run reaches
+'finalized'..."` timed out at Jest's default 5000ms, and the other two
+failures in that file were downstream of that one never reaching
+"finalized," not independent problems.
+
+### Root cause: the test's own internal retry budget already exceeded Jest's default timeout, even locally
+
+`waitForRunStatus`'s default (30 attempts × 300ms = 9000ms) was ALREADY
+longer than Jest's un-overridden default per-test timeout (5000ms) —
+this was a latent bug on any machine, not something that only appears
+on a slow CI runner. It happened not to matter locally because the real
+PDF job usually finishes well under 5s here. Fixed with an explicit
+per-test timeout (30000ms, the third argument to `it(...)`) on just
+this one test — not a global Jest config change, per the founder's
+explicit instruction: this is a legitimately long-running async wait on
+a real background job, not a sign of a hung test, and other tests
+shouldn't get a longer default just because this one needs it. Also
+bumped `waitForRunStatus`'s own default budget to 80 attempts (24s), so
+the inner retry loop and the outer Jest ceiling both have real margin,
+not one barely covering the other.
+
+### Verified by actually simulating a slow CI runner, not just re-running fast
+
+Per the founder's explicit instruction not to "push and hope": added a
+TEMPORARY, env-var-gated artificial delay
+(`TEST_SLOW_PDF_MS`) directly inside `PayrollPdfService.processRun` —
+the actual method both the queue-driven job and a direct re-invocation
+call — ran the suite with a genuinely aggressive 20-second injected
+delay (not a token amount), confirmed both affected tests completed
+in ~20s with real margin under their new 30s budgets, then fully
+reverted the temporary hook (`git diff` confirmed zero trace left).
+
+This stress test caught a SECOND real gap that hadn't manifested in
+the actual CI failure yet: `"PDF generation is idempotent..."` directly
+calls `payrollPdfService.processRun()` a second time (bypassing the
+queue, to test the job's own idempotency guard) and ALSO had no
+explicit timeout — under the injected 20s delay it independently hit
+the same 5000ms default, not merely as a downstream consequence of the
+first test failing. In the real CI run this hadn't been observed
+because the FIRST test already failed the precondition it depends on
+(a finalized run) before this one's own timing could matter — but the
+underlying weakness was real and would have surfaced on its own under
+different timing. Given explicit evidence (not speculation) that this
+exact call can take 20+ seconds under slow conditions, added the same
+30s explicit timeout here too.
+
+### Verification
+
+Full backend e2e suite (11 files/80 tests) re-run twice under NORMAL
+(non-stressed) conditions after reverting the temporary delay — stable
+both times. Pushed and confirmed the real GitHub Actions run, not just
+the local repro, per the founder's explicit instruction.
+
+---
+
 ## 2026-07-30 — Infrastructure pass, item 6: Error + uptime monitoring
 
 `@sentry/node` (`apps/api/src/monitoring/sentry.ts`, wired into
