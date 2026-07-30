@@ -1,0 +1,49 @@
+# Mirrors .gitignore's spirit for the Docker build context — none of
+# this needs to be sent to the daemon, and node_modules especially would
+# make every build painfully slow (each stage installs its own anyway).
+node_modules/
+.pnpm-store/
+**/node_modules/
+
+dist/
+build/
+.next/
+out/
+**/dist/
+**/.next/
+
+.turbo/
+
+.git/
+.github/
+
+.env
+.env.test
+.env.production
+.env.*.local
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+coverage/
+
+# Root-level runtime uploads directory ONLY (DOCUMENT_STORAGE_PATH/
+# PAYSLIP_STORAGE_PATH) — anchored with a leading slash so this does NOT
+# also match apps/api/src/common/storage/, which is real source code
+# (StorageService interface + LocalDiskStorageService). An earlier,
+# unanchored "**/storage/" pattern here matched that source directory
+# too and broke the build with "Cannot find module" errors — found
+# immediately by actually running `docker build`, not by inspection.
+/storage/
+
+*.tsbuildinfo
+.env.local
+
+*.md
+!README.md

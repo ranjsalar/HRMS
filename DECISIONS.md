@@ -7,6 +7,113 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-30 — Infrastructure pass, item 3: Production Dockerfiles
+
+`apps/api/Dockerfile` and `apps/web/Dockerfile` — multi-stage builds,
+non-root user, no dev dependencies or TypeScript source in the final
+image. Both actually built (`docker build`) and actually run
+(`docker run`, real requests against real running containers) before
+being considered done — every issue below was found that way, not by
+reading the Dockerfile back.
+
+### `apps/api`: `pnpm deploy --prod`, not a hand-rolled prod-only install
+
+pnpm workspace `node_modules` are symlink-heavy (into a shared
+content-addressable store) — copying that verbatim across Docker build
+stages breaks the symlinks' absolute targets. `pnpm deploy --prod`
+materializes a real, non-symlinked, production-only dependency tree for
+exactly one workspace package (no devDependencies — no jest/ts-node/
+@nestjs/cli/typescript, and no `@hrms/shared`, which is a devDependency
+here, imported by exactly one test file and no runtime code path,
+verified by grep before relying on that). Confirmed working with a
+standalone local test (outside Docker) before writing the Dockerfile
+around it.
+
+### `apps/api` bug: `pnpm deploy` silently produced a stub Prisma client
+
+The image built successfully and looked fine, but crashed at container
+startup: `TypeError: client_1.Prisma.Decimal is not a constructor`.
+Root cause: `pnpm deploy` does a FRESH dependency resolution into its
+target directory, not a copy of the build stage's already-`prisma
+generate`-d `node_modules` — `@prisma/client`'s own postinstall hook
+runs again there, can't find `schema.prisma` relative to the new
+location, and silently falls back to Prisma's own placeholder client
+(`default-index.ts`) instead of erroring loudly. Confirmed by literally
+diffing the deployed `.prisma/client/index.js` (65 lines, the stub)
+against a real generated one (500+ lines) — the build log gives zero
+indication this happened; typechecking is unaffected since `.d.ts`
+files are unrelated to this. Also found, empirically: `prisma generate`
+resolves WHERE to write the client by walking up from the **schema
+file's own location** looking for `node_modules` — not from the
+process's cwd. Pointing `--schema` at the original source copy (even
+while `cd`'d into the deploy output) is a no-op for the deploy tree; the
+schema file has to physically exist inside the deployed directory for
+the walk-up to land there. Fixed by copying `schema.prisma` into the
+deploy output first, then regenerating against that copy specifically,
+using the build stage's own `prisma` CLI (a devDependency, deliberately
+absent from the deployed tree itself, but the stage that produced that
+tree still has it).
+
+### `apps/web`: Next.js `output: "standalone"`, not `pnpm deploy`
+
+Unlike `apps/api`, Next's own build-time file tracer already produces a
+minimal, self-contained `node_modules` subset when `output:
+"standalone"` is set (`next.config.ts`) — adding `pnpm deploy` on top
+would be redundant with, and untested against, Next's own mechanism.
+Verified locally OUTSIDE Docker first: built with `output:"standalone"`,
+manually copied `.next/static`/`public` into the standalone tree per
+Next's own documented requirement (standalone output does NOT include
+these automatically), ran `node server.js`, confirmed both a real page
+and a real static JS chunk served correctly — only then written into
+the Dockerfile.
+
+**Nesting subtlety, found by testing**: in a monorepo, standalone
+output nests as `apps/web/server.js` (mirroring the workspace layout),
+with `node_modules` split across two levels — a hoisted root copy and a
+package-local copy — that Node's own directory walk-up resolves
+correctly only if that exact relative nesting is preserved. Copying just
+the `apps/web` subtree in isolation (flattening it to the image root)
+would silently break module resolution for anything hoisted to the root
+level; copying the whole `.next/standalone` tree and keeping `WORKDIR`
+nested to match (`/app/apps/web`) is what makes it work.
+
+**`NEXT_PUBLIC_API_URL` is a genuine Next.js constraint, not an
+oversight**: `NEXT_PUBLIC_*` vars are inlined into the client bundle at
+BUILD time, not read at runtime — `apps/web/src/lib/api-client.ts`'s
+`process.env.NEXT_PUBLIC_API_URL` becomes a literal string baked into
+the JS the browser downloads. Exposed as a Docker `ARG` so a real
+deployment can pass its real API origin at build time. The actually
+-correct long-term fix is a same-origin reverse proxy (item 4, next) so
+the frontend can use a relative `/api` path and never need to know the
+API's real URL at build time at all — noted here so the `ARG` isn't
+mistaken for the final design, just what's needed until item 4 exists.
+
+### `.dockerignore` bug: an over-broad pattern excluded real source code
+
+Modeled after `.gitignore`'s `/storage/` (the root-level runtime
+uploads directory), but added an extra unanchored `**/storage/` line
+intending to also match nested cases — except `apps/api/src/common/
+storage/` (the actual `StorageService` interface + `LocalDiskStorageService`
+source, real application code) matched too, and the build failed with
+"Cannot find module" errors for files that genuinely exist on disk.
+Fixed by keeping only the leading-slash-anchored `/storage/`, matching
+`.gitignore`'s own already-correct pattern exactly rather than "improving"
+it. Found immediately by running `docker build`, not by reading the
+`.dockerignore` back and reasoning about glob semantics.
+
+### Verification
+
+Both images actually built and actually run: `apps/api`'s image
+connected to the real dev-compose Postgres/Redis/MailDev over the
+`hrms_default` Docker network and handled a real login (real Argon2id
+check, real Postgres query, real JWT issuance); `apps/web`'s image
+served a real page and a real static asset. Image sizes: ~447MB
+(`apps/api`), ~339MB (`apps/web`) — reasonable for Node+Prisma and
+Node+Next respectively, not optimized further since neither is
+excessive. Test containers/images cleaned up afterward.
+
+---
+
 ## 2026-07-30 — Infrastructure pass: DigitalOcean Spaces and Sentry deliberately deferred (cost/context-switch, not forgotten)
 
 At kickoff of the infrastructure pass, the founder made two explicit
