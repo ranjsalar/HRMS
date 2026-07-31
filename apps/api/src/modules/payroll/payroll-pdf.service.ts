@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { TenantContextStorage } from "../../database/prisma/tenant-context.storage";
 import { TenantScopedRunner } from "../../database/prisma/tenant-scoped-runner.service";
 import { STORAGE_SERVICE, type StorageService } from "../../common/storage/storage.interface";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "../../i18n/locale.type";
+import { NotificationsService } from "../notifications/notifications.service";
 import type { PayslipPdfJobData } from "./payroll.queue";
 import { renderPayslipPdf } from "./payslip-pdf-renderer";
 
@@ -28,6 +31,8 @@ export class PayrollPdfService {
     private readonly tenantContext: TenantContextStorage,
     private readonly scoped: TenantScopedRunner,
     @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+    private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   async processRun(job: PayslipPdfJobData): Promise<void> {
@@ -48,7 +53,7 @@ export class PayrollPdfService {
         const [payslips, company] = await Promise.all([
           tx.payslip.findMany({
             where: { payrollRunId: run.id },
-            include: { employee: { select: { fullName: true } } },
+            include: { employee: { select: { fullName: true, userId: true } } },
           }),
           tx.company.findUniqueOrThrow({ where: { id: job.companyId }, select: { name: true } }),
         ]);
@@ -75,6 +80,40 @@ export class PayrollPdfService {
             where: { id: payslip.id },
             data: { pdfUrl: storageKey, generatedAt: new Date() },
           });
+
+          // Runs from a BullMQ worker, not an HTTP request — a thrown
+          // error here would fail the whole job (BullMQ would retry it),
+          // potentially leaving LATER payslips in this same run
+          // ungenerated just because one employee's email failed. Caught
+          // and logged instead, same "never block the underlying action"
+          // reasoning as LeaveRequestsService.notifyDecision. Silently
+          // no-ops for a record-only employee (no userId, nothing to
+          // email). See DECISIONS.md.
+          if (payslip.employee.userId) {
+            try {
+              const user = await tx.user.findUniqueOrThrow({
+                where: { id: payslip.employee.userId },
+                select: { email: true, locale: true },
+              });
+              const locale = (LOCALES as readonly string[]).includes(user.locale)
+                ? (user.locale as Locale)
+                : DEFAULT_LOCALE;
+              const frontendUrl = this.config.getOrThrow<string>("FRONTEND_URL");
+              await this.notifications.sendPayslipReadyEmail({
+                to: user.email,
+                locale,
+                employeeName: payslip.employee.fullName,
+                periodStart: run.periodStart,
+                periodEnd: run.periodEnd,
+                payslipsUrl: `${frontendUrl}/payslips`,
+              });
+            } catch (error) {
+              this.logger.error(
+                `Failed to send payslip-ready email for Payslip ${payslip.id}`,
+                error instanceof Error ? error.stack : error,
+              );
+            }
+          }
         }
 
         const stillMissing = await tx.payslip.count({

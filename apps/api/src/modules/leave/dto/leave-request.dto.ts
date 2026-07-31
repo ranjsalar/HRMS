@@ -37,6 +37,16 @@ export class ApproveLeaveRequestDto {
   force?: boolean;
 }
 
+export class RejectLeaveRequestDto {
+  // Optional — rejecting with no stated reason is still a valid action.
+  // Surfaced to the employee in the leave-decision email when present.
+  // See DECISIONS.md.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  reason?: string;
+}
+
 export class TeamLeaveRequestQueryDto {
   @IsOptional()
   @IsUUID()

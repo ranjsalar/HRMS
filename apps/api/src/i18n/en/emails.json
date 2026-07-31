@@ -12,5 +12,18 @@
     "passwordLabel": "Temporary password",
     "linkText": "Log in",
     "passwordNotice": "You'll be required to set a new password the first time you log in."
+  },
+  "leaveDecision": {
+    "subjectApproved": "Your leave request has been approved",
+    "subjectRejected": "Your leave request has been rejected",
+    "bodyApproved": "Hi {{name}}, your {{leaveType}} request for {{dateRange}} has been approved.",
+    "bodyRejected": "Hi {{name}}, your {{leaveType}} request for {{dateRange}} has been rejected.",
+    "reasonLabel": "Reason",
+    "linkText": "View your leave requests"
+  },
+  "payslipReady": {
+    "subject": "Your payslip is ready",
+    "body": "Hi {{name}}, your payslip for {{period}} is ready to view.",
+    "linkText": "Log in to view your payslip"
   }
 }

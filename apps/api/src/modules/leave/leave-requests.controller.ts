@@ -9,6 +9,7 @@ import {
   ApproveLeaveRequestDto,
   LeaveBalanceQueryDto,
   PreviewLeaveRequestDto,
+  RejectLeaveRequestDto,
   SubmitLeaveRequestDto,
   TeamLeaveBalanceQueryDto,
   TeamLeaveRequestQueryDto,
@@ -79,9 +80,10 @@ export class LeaveRequestsController {
     @CurrentUser() user: AccessTokenPayload,
     @CurrentPermissionScope() scope: PermissionScope,
     @Param("id") id: string,
+    @Body() dto: RejectLeaveRequestDto,
     @ClientIp() ipAddress: string,
   ) {
-    return this.leaveRequestsService.reject(user.sub, scope, id, {
+    return this.leaveRequestsService.reject(user.sub, scope, id, dto.reason, {
       userId: user.sub,
       ipAddress,
     });

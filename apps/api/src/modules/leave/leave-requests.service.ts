@@ -3,8 +3,10 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
   LeaveBalance,
   LeaveRequest,
@@ -14,8 +16,10 @@ import type {
 } from "@prisma/client";
 import { TenantContextStorage } from "../../database/prisma/tenant-context.storage";
 import { countWorkingDays, prorateAnnualDays, toDateKey } from "../../common/leave/working-days";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "../../i18n/locale.type";
 import { AuditService } from "../audit/audit.service";
 import { EmployeesService } from "../employees/employees.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import type { SubmitLeaveRequestDto } from "./dto/leave-request.dto";
 
 export interface RequestActor {
@@ -37,10 +41,14 @@ type LeaveRequestWithEmployee = LeaveRequest & { employee: { userId: string | nu
  */
 @Injectable()
 export class LeaveRequestsService {
+  private readonly logger = new Logger(LeaveRequestsService.name);
+
   constructor(
     private readonly tenantContext: TenantContextStorage,
     private readonly employees: EmployeesService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   private tx() {
@@ -235,6 +243,7 @@ export class LeaveRequestsService {
       metadata: { workingDays, forced: wouldGoNegative && Boolean(options.force) },
     });
 
+    await this.notifyDecision(updated);
     return updated;
   }
 
@@ -242,6 +251,7 @@ export class LeaveRequestsService {
     callerId: string,
     scope: PermissionScope,
     requestId: string,
+    reason: string | undefined,
     actor: RequestActor,
   ): Promise<LeaveRequest> {
     const request = await this.loadForDecision(requestId, callerId, scope);
@@ -250,7 +260,7 @@ export class LeaveRequestsService {
       // Never touched a balance — nothing to restore.
       const updated = await this.tx().leaveRequest.update({
         where: { id: requestId },
-        data: { status: "rejected", rejectedBy: callerId },
+        data: { status: "rejected", rejectedBy: callerId, rejectionReason: reason },
       });
       await this.audit.record({
         userId: actor.userId,
@@ -260,6 +270,7 @@ export class LeaveRequestsService {
         ipAddress: actor.ipAddress,
         metadata: { restored: false },
       });
+      await this.notifyDecision(updated, reason);
       return updated;
     }
 
@@ -286,7 +297,7 @@ export class LeaveRequestsService {
 
       const updated = await this.tx().leaveRequest.update({
         where: { id: requestId },
-        data: { status: "rejected", rejectedBy: callerId },
+        data: { status: "rejected", rejectedBy: callerId, rejectionReason: reason },
       });
       await this.audit.record({
         userId: actor.userId,
@@ -296,10 +307,61 @@ export class LeaveRequestsService {
         ipAddress: actor.ipAddress,
         metadata: { restored: true, workingDays: request.workingDays },
       });
+      await this.notifyDecision(updated, reason);
       return updated;
     }
 
     throw new ConflictException("Only a pending or approved request can be rejected");
+  }
+
+  /**
+   * Called AFTER the decision (approve/reject) has already been written
+   * and audited — a failed send here must never undo or block the
+   * decision itself, so every failure mode (missing employee, no linked
+   * User, the email transport itself throwing) is caught and logged, not
+   * propagated. Silently no-ops for a record-only employee (no
+   * `userId` — nothing to email). See DECISIONS.md.
+   */
+  private async notifyDecision(request: LeaveRequest, reason?: string): Promise<void> {
+    try {
+      const [employee, leaveType] = await Promise.all([
+        this.tx().employee.findUniqueOrThrow({
+          where: { id: request.employeeId },
+          select: { fullName: true, userId: true },
+        }),
+        this.tx().leaveType.findUniqueOrThrow({
+          where: { id: request.leaveTypeId },
+          select: { name: true },
+        }),
+      ]);
+      if (!employee.userId) return;
+
+      const user = await this.tx().user.findUniqueOrThrow({
+        where: { id: employee.userId },
+        select: { email: true, locale: true },
+      });
+      const locale = (LOCALES as readonly string[]).includes(user.locale)
+        ? (user.locale as Locale)
+        : DEFAULT_LOCALE;
+
+      const frontendUrl = this.config.getOrThrow<string>("FRONTEND_URL");
+      await this.notifications.sendLeaveDecisionEmail({
+        to: user.email,
+        locale,
+        employeeName: employee.fullName,
+        leaveTypeName: leaveType.name,
+        startDate: request.startDate,
+        endDate: request.endDate,
+        status: request.status as "approved" | "rejected",
+        reason,
+        leaveRequestsUrl: `${frontendUrl}/leave`,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to send leave decision email for LeaveRequest ${request.id}`,
+        error instanceof Error ? error.stack : error,
+      );
+    }
   }
 
   async myRequests(userId: string): Promise<LeaveRequest[]> {

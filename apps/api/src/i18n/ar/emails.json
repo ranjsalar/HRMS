@@ -12,5 +12,18 @@
     "passwordLabel": "كلمة المرور المؤقتة",
     "linkText": "تسجيل الدخول",
     "passwordNotice": "سيُطلب منك تعيين كلمة مرور جديدة عند أول تسجيل دخول."
+  },
+  "leaveDecision": {
+    "subjectApproved": "تمت الموافقة على طلب إجازتك",
+    "subjectRejected": "تم رفض طلب إجازتك",
+    "bodyApproved": "مرحبًا {{name}}، تمت الموافقة على طلب {{leaveType}} الخاص بك للفترة {{dateRange}}.",
+    "bodyRejected": "مرحبًا {{name}}، تم رفض طلب {{leaveType}} الخاص بك للفترة {{dateRange}}.",
+    "reasonLabel": "السبب",
+    "linkText": "عرض طلبات إجازتك"
+  },
+  "payslipReady": {
+    "subject": "قسيمة راتبك جاهزة",
+    "body": "مرحبًا {{name}}، قسيمة راتبك عن {{period}} جاهزة للعرض.",
+    "linkText": "تسجيل الدخول لعرض قسيمة راتبك"
   }
 }

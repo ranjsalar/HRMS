@@ -7,6 +7,134 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Notifications expansion, items 1–2: leave decision + payslip ready emails (item 3 flagged, not started)
+
+Closes a real gap against the original v1 plan: module 8 listed "leave
+approved/rejected, payslip ready, birthdays" as notification events, but
+only password-reset and employee-welcome emails existed before this
+pass. Built items 1 and 2 (event-driven); item 3 (birthday, schedule-
+driven) is flagged below, not built — see its own section.
+
+### Item 1 — leave approved/rejected
+
+`LeaveRequestsService.approve()`/`reject()` now call a new private
+`notifyDecision()` after the decision is already committed and audited.
+Content: leave type, date range, decision status, and — new — the
+rejecting manager/admin's own reason when one was given.
+
+**Rejection reason is new schema scope, added because this feature
+directly needs it.** `LeaveRequest.reason` was already taken (the
+employee's own reason for *requesting*, set at submit time) — there was
+no field at all for a *decision* reason. Added `rejectionReason String?`
+(migration `20260731212742_add_leave_rejection_reason`) and a matching
+optional field on a new `RejectLeaveRequestDto`. Unlike the birthday
+item's date-of-birth question (flagged, not assumed), this was a small,
+directly-implied requirement for the feature as specified, not
+speculative scope — the founder's own content spec ("if rejected, the
+reason if one was provided") only makes sense with somewhere to put it.
+
+**Locale: the recipient's own stored `User.locale`, NOT a request-scoped
+one — a deliberate departure from the password-reset pattern.**
+Password-reset's request-scoped locale works because the requester and
+the recipient are the same person, live in that exact request.
+Leave-decision breaks that assumption: the person acting (the approving
+manager/admin) is a *different* person from the recipient (the
+employee), currently browsing in *their own* locale — using it would be
+actively wrong, not just imprecise. The employee isn't present in this
+request at all, so the only genuine signal for their language is
+whatever's stored on their own `User.locale` — imperfect for
+pre-existing employees (schema default "en", never written), but
+correctly targeted and now real for anyone created through the
+employee-account-creation flow's locale picker. This is architecturally
+the *right* choice here, not a fallback taken because the "real" fix
+was unavailable — the two features have genuinely different requester/
+recipient shapes.
+
+### Item 2 — payslip ready
+
+`PayrollPdfService.processRun()` now sends one email per payslip, right
+after that payslip's own PDF is generated (not once at the end of the
+whole run) — each employee is notified as soon as *theirs* specifically
+is ready, not held back by slower payslips elsewhere in a large run.
+
+**No PII beyond a name and a date range.** The email states only that a
+payslip exists for a given period — no gross/net/deductions, matching
+the explicit "no new PII exposure" requirement. **No direct/signed link
+to the PDF either** — only a plain link to the app's existing
+login-gated `/payslips` page. A signed URL would have been just as
+"secure" in the sense of being unguessable, but would have created a
+second way to reach payslip data that bypasses the normal login/RBAC
+path if the email itself were ever forwarded or intercepted — the
+founder's explicit instruction was to keep this behind the *existing*
+signed-URL-behind-auth pattern, not add a new one. Verified explicitly
+in the e2e test: the email body is asserted to contain neither the
+salary figures nor anything matching a PDF/token/signed-url pattern.
+
+### Failure isolation — a real, alternate EmailService, not a mock
+
+Both new call sites (`LeaveRequestsService.notifyDecision`,
+`PayrollPdfService.processRun`'s per-payslip email) wrap the
+notification send in its own try/catch, logging on failure rather than
+letting the error propagate. This matters more here than it did for
+password-reset/welcome emails: both of THOSE run inside interactive
+Prisma transactions started by `TenantScopeInterceptor` (HTTP) or
+`TenantScopedRunner` (worker) — an uncaught throw there rolls back the
+*entire* transaction, meaning an email failure could silently undo a
+real leave decision or block later payslips in the same run from ever
+generating. Proven with a new, dedicated test double,
+`test/throwing-email.service.ts` — a REAL alternate implementation of
+`EmailService` that always throws, substituted via NestJS's
+`overrideProvider(EMAIL_SERVICE)` on its own separate `TestingModule`
+instance (every other provider — Prisma, real Postgres/Redis — stays
+genuinely real). This is a real collaborator behind the same interface
+the app already abstracts email behind for exactly this kind of
+substitutability (see `EmailService`'s own class comment), not a spy on
+internal logic — consistent with this build's standing preference for
+real behavior over mocks. Both new e2e suites include a dedicated
+failure-isolation test: the leave decision genuinely commits (asserted
+directly against the DB) and the payroll run genuinely reaches
+"finalized" with every payslip PDF'd, even though the email transport
+unconditionally throws every time.
+
+### What's verified
+
+Real backend, not mocked: `test/leave-decision-notifications.e2e-spec.ts`
+(6 tests) — approved/rejected content, reason-present vs. reason-absent,
+real Arabic email content proving the employee's-own-locale behavior
+(approved by a non-Arabic-locale manager), a record-only employee
+(no `User`) approving cleanly with no email attempted, and the failure-
+isolation proof. `test/payslip-ready-notifications.e2e-spec.ts` (2
+tests) — real content in Sorani (proving the same own-locale behavior),
+explicit assertions that no salary figures or PDF/signed-url patterns
+ever appear in the email body, and its own failure-isolation proof.
+Full regression check: backend 115 e2e (15 suites) + 130 unit tests, all
+green — including the pre-existing `leave.e2e-spec.ts`/`payroll.e2e-spec.ts`
+suites, confirming the new optional `RejectLeaveRequestDto.reason` field
+and the new email hooks don't change any existing behavior.
+
+---
+
+## 2026-08-01 — Notifications expansion item 3 (birthday reminders): FLAGGED, not built — missing schema
+
+Per the founder's explicit instruction, confirmed before writing any
+code: `Employee` has no birth-date field anywhere (`id`, `companyId`,
+`userId`, `fullName`, `nationalId`, `jobTitle`, `departmentId`,
+`branchId`, `managedDepartmentId`, `hireDate`, `salaryBase`, `currency`,
+`bankAccount`, `status`, `phone`, `address`, `emergencyContactName`,
+`emergencyContactPhone` — checked directly against `schema.prisma`, not
+inferred). There is no existing field to repurpose (`hireDate` is a
+different, already-meaningful date). This is new schema scope, not
+existing data waiting to be wired into a notification — not built
+speculatively, per the founder's own instruction to flag rather than
+guess. Also undecided, and genuinely a product decision rather than an
+implementation detail (per the founder's own framing): who receives a
+birthday reminder (the employee, their manager, company-wide, or
+configurable per company) and how many days of advance notice. Needs
+the founder's direction on both the schema addition and the product
+question before this can be built.
+
+---
+
 ## 2026-07-31 — Verification-pass item 3 (deferred, not built): push notifications
 
 The original MVP module list (`HRMS-Project-Plan.md`) lists "Email + push"

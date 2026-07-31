@@ -295,6 +295,13 @@ model LeaveRequest {
   approvedBy  String?
   rejectedBy  String?
   reason      String?
+  // The rejecting manager/admin's OWN reason, distinct from `reason`
+  // above (the employee's own reason for requesting, set at submit
+  // time) — added for the leave-decision notification email, which
+  // needs to be able to tell an employee WHY their request was rejected
+  // when one was given. Optional: rejecting with no explanation is still
+  // a valid action. See DECISIONS.md.
+  rejectionReason String?
   createdAt   DateTime    @default(now())
 }
 

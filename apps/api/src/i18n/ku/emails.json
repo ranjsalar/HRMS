@@ -12,5 +12,18 @@
     "passwordLabel": "وشەی نهێنی کاتی",
     "linkText": "چوونە ژوورەوە",
     "passwordNotice": "پێویستە وشەی نهێنیەکی نوێ دابنێیت لە یەکەم جار چوونە ژوورەوەت."
+  },
+  "leaveDecision": {
+    "subjectApproved": "داواکاری مۆڵەتەکەت پەسەندکرا",
+    "subjectRejected": "داواکاری مۆڵەتەکەت ڕەتکرایەوە",
+    "bodyApproved": "سڵاو {{name}}، داواکاری {{leaveType}}ت بۆ ماوەی {{dateRange}} پەسەندکرا.",
+    "bodyRejected": "سڵاو {{name}}، داواکاری {{leaveType}}ت بۆ ماوەی {{dateRange}} ڕەتکرایەوە.",
+    "reasonLabel": "هۆکار",
+    "linkText": "بینینی داواکارییەکانی مۆڵەتت"
+  },
+  "payslipReady": {
+    "subject": "فیشی موچەت ئامادەیە",
+    "body": "سڵاو {{name}}، فیشی موچەت بۆ {{period}} ئامادەیە بۆ بینین.",
+    "linkText": "چوونە ژوورەوە بۆ بینینی فیشی موچەت"
   }
 }

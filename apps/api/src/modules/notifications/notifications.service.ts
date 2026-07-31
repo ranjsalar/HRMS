@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Locale } from "../../i18n/locale.type";
+import { formatDate } from "../../i18n/format-date";
 import en from "../../i18n/en/emails.json";
 import ar from "../../i18n/ar/emails.json";
 import ku from "../../i18n/ku/emails.json";
@@ -135,6 +136,111 @@ export class NotificationsService {
     const text = `${body}\n\n${t.emailLabel}: ${to}\n${t.passwordLabel}: ${temporaryPassword}\n\n${t.linkText}: ${loginUrl}\n\n${t.passwordNotice}`;
 
     await this.email.send({ to, subject, html, text });
+  }
+
+  /**
+   * Fires when a manager/admin approves or rejects a pending
+   * LeaveRequest — see LeaveRequestsService.approve()/reject(), which
+   * calls this AFTER the decision is already committed, inside its own
+   * try/catch (a failed send must never undo or block the decision
+   * itself — see DECISIONS.md). Locale is the recipient's OWN stored
+   * `User.locale`, not a request-scoped one: unlike password-reset
+   * (requester and recipient are the same person, live in the request),
+   * the person deciding here is a DIFFERENT person (the approver,
+   * currently browsing in THEIR OWN locale) — there is no live signal
+   * for the employee's language at all, only whatever's on their User
+   * row. See DECISIONS.md.
+   */
+  async sendLeaveDecisionEmail(params: {
+    to: string;
+    locale: Locale;
+    employeeName: string;
+    leaveTypeName: string;
+    startDate: Date;
+    endDate: Date;
+    status: "approved" | "rejected";
+    reason?: string;
+    leaveRequestsUrl: string;
+  }): Promise<void> {
+    const {
+      to,
+      locale,
+      employeeName,
+      leaveTypeName,
+      startDate,
+      endDate,
+      status,
+      reason,
+      leaveRequestsUrl,
+    } = params;
+    const t = TRANSLATIONS[locale].leaveDecision;
+    const dir = locale === "en" ? "ltr" : "rtl";
+    const dateRange = `${formatDate(startDate, locale)} – ${formatDate(endDate, locale)}`;
+    const vars = { name: employeeName, leaveType: leaveTypeName, dateRange };
+
+    const subject = status === "approved" ? t.subjectApproved : t.subjectRejected;
+    const body = interpolate(status === "approved" ? t.bodyApproved : t.bodyRejected, vars);
+    const reasonLine = reason ? `<p>${escapeHtml(t.reasonLabel)}: ${escapeHtml(reason)}</p>` : "";
+    const reasonTextLine = reason ? `\n${t.reasonLabel}: ${reason}` : "";
+
+    const html = `<!doctype html>
+<html lang="${locale}" dir="${dir}">
+  <body style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+    <p>${escapeHtml(body)}</p>
+    ${reasonLine}
+    <p>
+      <a href="${escapeHtml(leaveRequestsUrl)}" style="display: inline-block; padding: 10px 20px; background: #0f5c5c; color: #fff; text-decoration: none; border-radius: 6px;">
+        ${escapeHtml(t.linkText)}
+      </a>
+    </p>
+  </body>
+</html>`;
+
+    const text = `${body}${reasonTextLine}\n\n${t.linkText}: ${leaveRequestsUrl}`;
+
+    await this.email.send({ to, subject, html, text });
+  }
+
+  /**
+   * Fires once per payslip, right after PayrollPdfService finishes
+   * generating that specific payslip's PDF — called inside its own
+   * try/catch there for the same "never block the underlying action"
+   * reason as sendLeaveDecisionEmail. Deliberately carries NO salary
+   * figures (gross/net/deductions) and NO direct/signed link to the
+   * PDF itself — only a plain link to the app's normal login-gated
+   * payslips page, so this email can never become a second, unaudited
+   * way to reach payslip data outside the existing RBAC + signed-URL
+   * download flow. See DECISIONS.md.
+   */
+  async sendPayslipReadyEmail(params: {
+    to: string;
+    locale: Locale;
+    employeeName: string;
+    periodStart: Date;
+    periodEnd: Date;
+    payslipsUrl: string;
+  }): Promise<void> {
+    const { to, locale, employeeName, periodStart, periodEnd, payslipsUrl } = params;
+    const t = TRANSLATIONS[locale].payslipReady;
+    const dir = locale === "en" ? "ltr" : "rtl";
+    const period = `${formatDate(periodStart, locale)} – ${formatDate(periodEnd, locale)}`;
+    const body = interpolate(t.body, { name: employeeName, period });
+
+    const html = `<!doctype html>
+<html lang="${locale}" dir="${dir}">
+  <body style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+    <p>${escapeHtml(body)}</p>
+    <p>
+      <a href="${escapeHtml(payslipsUrl)}" style="display: inline-block; padding: 10px 20px; background: #0f5c5c; color: #fff; text-decoration: none; border-radius: 6px;">
+        ${escapeHtml(t.linkText)}
+      </a>
+    </p>
+  </body>
+</html>`;
+
+    const text = `${body}\n\n${t.linkText}: ${payslipsUrl}`;
+
+    await this.email.send({ to, subject: t.subject, html, text });
   }
 }
 
