@@ -209,7 +209,9 @@ async function main(): Promise<void> {
       );
     } finally {
       await superadminPrisma.task.deleteMany({ where: { id: { in: [taskA.id, taskB.id] } } });
-      await superadminPrisma.project.deleteMany({ where: { id: { in: [projectA.id, projectB.id] } } });
+      await superadminPrisma.project.deleteMany({
+        where: { id: { in: [projectA.id, projectB.id] } },
+      });
     }
   } finally {
     await appPrisma.$disconnect();
