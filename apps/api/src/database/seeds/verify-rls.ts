@@ -131,6 +131,86 @@ async function main(): Promise<void> {
       seenCompanyIds.has(companyA.id) && seenCompanyIds.has(companyB.id),
       `saw company ids: ${[...seenCompanyIds].join(", ")}`,
     );
+
+    // ── 8. Projects module (Project/ProjectMember/Task/TaskTimeEntry) ───
+    // No seed fixtures exist yet for this module, so create throwaway rows
+    // directly via the BYPASSRLS connection, then clean them up at the end.
+    const projectA = await superadminPrisma.project.create({
+      data: { companyId: companyA.id, name: "RLS check project A" },
+    });
+    const projectB = await superadminPrisma.project.create({
+      data: { companyId: companyB.id, name: "RLS check project B" },
+    });
+    const taskA = await superadminPrisma.task.create({
+      data: { companyId: companyA.id, projectId: projectA.id, title: "RLS check task A" },
+    });
+    const taskB = await superadminPrisma.task.create({
+      data: { companyId: companyB.id, projectId: projectB.id, title: "RLS check task B" },
+    });
+
+    try {
+      const projectsForA = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.project.findMany();
+      });
+      check(
+        "hrms_app scoped to Company A sees only Company A's projects",
+        projectsForA.length > 0 && projectsForA.every((p) => p.companyId === companyA.id),
+        `got ${projectsForA.length} row(s), companyIds: ${[...new Set(projectsForA.map((p) => p.companyId))].join(", ")}`,
+      );
+
+      const tasksForA = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.task.findMany();
+      });
+      check(
+        "hrms_app scoped to Company A sees only Company A's tasks",
+        tasksForA.length > 0 && tasksForA.every((t) => t.companyId === companyA.id),
+        `got ${tasksForA.length} row(s), companyIds: ${[...new Set(tasksForA.map((t) => t.companyId))].join(", ")}`,
+      );
+
+      const directTaskAttempt = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.task.findMany({ where: { companyId: companyB.id } });
+      });
+      check(
+        "Explicit query for Company B's tasks while scoped to Company A returns zero rows",
+        directTaskAttempt.length === 0,
+        `got ${directTaskAttempt.length} row(s)`,
+      );
+
+      const projectsForB = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyB.id}'`);
+        return tx.project.findMany();
+      });
+      check(
+        "hrms_app scoped to Company B sees only Company B's projects",
+        projectsForB.length > 0 && projectsForB.every((p) => p.companyId === companyB.id),
+        `got ${projectsForB.length} row(s)`,
+      );
+
+      const noScopeProjects = await appPrisma.$transaction(async (tx) => {
+        return tx.project.findMany();
+      });
+      check(
+        "hrms_app with no app.current_company_id set sees zero projects (fail-closed default)",
+        noScopeProjects.length === 0,
+        `got ${noScopeProjects.length} row(s)`,
+      );
+
+      const allProjectsSuperadmin = await superadminPrisma.project.findMany({
+        where: { id: { in: [projectA.id, projectB.id] } },
+      });
+      const seenProjectCompanyIds = new Set(allProjectsSuperadmin.map((p) => p.companyId));
+      check(
+        "hrms_superadmin (BYPASSRLS) sees projects from both companies, no SET LOCAL needed",
+        seenProjectCompanyIds.has(companyA.id) && seenProjectCompanyIds.has(companyB.id),
+        `saw company ids: ${[...seenProjectCompanyIds].join(", ")}`,
+      );
+    } finally {
+      await superadminPrisma.task.deleteMany({ where: { id: { in: [taskA.id, taskB.id] } } });
+      await superadminPrisma.project.deleteMany({ where: { id: { in: [projectA.id, projectB.id] } } });
+    }
   } finally {
     await appPrisma.$disconnect();
     await superadminPrisma.$disconnect();

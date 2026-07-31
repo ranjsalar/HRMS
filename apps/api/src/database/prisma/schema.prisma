@@ -51,6 +51,10 @@ model Company {
   payrollRuns        PayrollRun[]
   payslips           Payslip[]
   auditLogs          AuditLog[]
+  projects           Project[]
+  projectMembers     ProjectMember[]
+  tasks              Task[]
+  taskTimeEntries    TaskTimeEntry[]
 }
 
 enum CompanyStatus {
@@ -184,11 +188,14 @@ model Employee {
   emergencyContactName   String?
   emergencyContactPhone  String?
 
-  documents         Document[]
-  attendanceRecords AttendanceRecord[]
-  leaveRequests     LeaveRequest[]
-  leaveBalances     LeaveBalance[]
-  payslips          Payslip[]
+  documents          Document[]
+  attendanceRecords  AttendanceRecord[]
+  leaveRequests      LeaveRequest[]
+  leaveBalances      LeaveBalance[]
+  payslips           Payslip[]
+  projectMemberships ProjectMember[]
+  assignedTasks      Task[]
+  taskTimeEntries    TaskTimeEntry[]
 }
 
 enum EmployeeStatus {
@@ -476,4 +483,97 @@ model AuditLog {
   metadata  Json?
   ipAddress String?
   timestamp DateTime @default(now())
+}
+
+// ── Projects / Task Management ──────────────────────────────────────
+// ERP module #2, per ERP-Master-Plan.md — see Projects-Module-Plan.md for
+// the full design (RBAC model, out-of-scope list, why TaskTimeEntry is a
+// manual log rather than a reuse of AttendanceRecord's clock-in/out +
+// geofence shape). Every model here follows the exact same companyId +
+// RLS pattern as every table above; Task/ProjectMember reference Employee
+// directly, never a parallel "team member" concept.
+
+enum ProjectStatus {
+  planning
+  active
+  on_hold
+  completed
+  cancelled
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  blocked
+  done
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id])
+  name        String
+  description String?
+  status      ProjectStatus @default(planning)
+  startDate   DateTime?
+  dueDate     DateTime?
+  // Plain string, no relation — same "who did this" convention as
+  // LeaveRequest.approvedBy / PayrollRun.finalizedBy: an audit-adjacent
+  // fact, not a query join point.
+  createdBy   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members ProjectMember[]
+  tasks   Task[]
+}
+
+model ProjectMember {
+  id         String   @id @default(uuid())
+  // Denormalized onto this row (not just reachable via Project) because
+  // RLS policies always compare a column on the row itself — every
+  // other tenant-owned table in this schema does the same, even ones
+  // that could theoretically derive companyId through a join.
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([projectId, employeeId])
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id])
+  title       String
+  description String?
+  status      TaskStatus @default(todo)
+  assigneeId  String?
+  assignee    Employee?  @relation(fields: [assigneeId], references: [id])
+  dueDate     DateTime?
+  createdBy   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  timeEntries TaskTimeEntry[]
+}
+
+model TaskTimeEntry {
+  id         String   @id @default(uuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  date       DateTime
+  hours      Decimal  @db.Decimal(5, 2)
+  note       String?
+  createdAt  DateTime @default(now())
 }
