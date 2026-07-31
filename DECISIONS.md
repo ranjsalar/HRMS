@@ -7,6 +7,114 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-31 — Verification-pass item 1: employee account creation (the actual production blocker)
+
+Closes the single most consequential gap the verification pass found:
+`POST /employees` could create an `Employee` record but never a linked
+`User` — every login-capable account in this entire build (CLI, Super
+Admin dashboard) was for a company's first admin only. A pilot company's
+admin had no way to onboard a second real person. Fixed by extending the
+SAME endpoint (not a new one), mirroring the Super Admin dashboard's
+create-company-and-admin flow: optional `email`/`role`/`locale` fields on
+`CreateEmployeeDto` — providing `email` provisions a real `User`, linked
+via the pre-existing (but previously never-set) `Employee.userId`
+column, with a securely generated temp password shown once and emailed.
+
+### `email` stays optional, not required — record-only creation is preserved
+
+`Employee.userId` is nullable by schema design, and this build already
+had four passing e2e tests creating employee RECORDS with no intent of
+ever giving them logins. Rather than force every future `POST /employees`
+caller to supply an email (breaking that precedent and forcing a
+placeholder email onto e.g. a contractor who'll never use the system),
+`email` stays optional: omit it for the old record-only behavior
+(unchanged, still tested), provide it to also provision a login. `role`/
+`locale` are only meaningful alongside `email` and are rejected with 400
+if sent without it — validated as explicit service logic, not a
+class-validator cross-field chain, for the same "read more clearly as
+real code" reasoning already used elsewhere in this module.
+
+### Manager account-creation reuses an EXISTING, already-tested RBAC precedent unchanged
+
+The founder asked whether managers should be able to create employees at
+all. They already could, in a narrow sense: `EmployeesService.create()`'s
+`own_department` handling — forcing the new employee into the manager's
+own department, rejecting an explicit mismatch — has existed since step
+4/5, and `employee-management.e2e-spec.ts`'s "Manager cross-department
+CRUD" suite already proved it, via a per-company `RolePermission` grant
+the founder can add through the existing `/rbac/permissions` UI
+(`employees:create`, scope `own_department` — deliberately NOT a
+default-role-permissions.ts entry, matching how it already wasn't one).
+Login-provisioning inherits this unchanged: a manager with that grant can
+create a real employee login in their own department, but is hard-blocked
+(403, structural check, not just "hidden in the UI") from ever setting
+`role: "manager"` — only a `company_admin` (scope `"all"`) can grant the
+manager role. Proven with real e2e tests for both the positive case
+(manager creates a real employee login) and both negative cases
+(role-escalation attempt; cross-department attempt).
+
+### The welcome email is genuinely localized — unlike the Super Admin dashboard's
+
+Deliberately different from `sendCompanyAdminWelcomeEmail`: this
+recipient is a real pilot company's own staff member, who picks their own
+language, not the founder. Added a new `employeeWelcome` key group to
+`apps/api/src/i18n/{en,ar,ku}/emails.json` (subject/body/labels, real
+Arabic and Sorani translations — same "machine/placeholder-quality,
+needs a native-speaker review pass before launch" caveat already logged
+for the rest of this app's translations, not a new one) and a small
+`interpolate()` helper in `NotificationsService` (the first email in this
+codebase whose translated strings carry runtime values — `{{name}}`/
+`{{companyName}}` — every prior email either had no variables in its
+translated text or built dynamic parts outside the translated string
+entirely). The locale used is whichever the creating admin picks in the
+form (defaulting to the company's own `localeDefault`) — the one point
+before a brand-new employee's first login where their language
+preference can plausibly be known at all, and also written to the new
+`User.locale` value itself (previously write-never anywhere in this
+codebase — a real, if incidental, first use of that column for its
+actual purpose).
+
+### Frontend: extends the Team page, not a new screen
+
+No "add employee" UI existed anywhere before this — confirmed by the
+verification pass. Built directly into `apps/web/src/app/team/page.tsx`
+(the screen a company_admin/manager already uses for everything else
+team-related), not a separate route: a toggleable `AddEmployeeForm`
+component plus a one-time temp-password banner, matching the Super Admin
+dashboard's identical display-once convention. `AddEmployeeForm` takes
+`isAdmin` as a plain prop from the page (which already has a real session
+via `useAuth()`) rather than reading `useAuth()` internally — a cleaner,
+more testable shape that also sidesteps a real, if test-only, hazard
+found while building the real-backend integration test: `AuthProvider`'s
+own mount-time silent-refresh-on-mount effect races against and can wipe
+out a directly-established test session (no real cookie jar in this
+`fetch`/jsdom test environment), so components a test needs to drive
+without going through the actual `/login` page are better off taking
+auth-derived booleans as props than reading `useAuth()` themselves.
+Localized in en/ar/ku (unlike the Super Admin dashboard) — this screen is
+used by real company staff, not the founder alone.
+
+### What's verified
+
+Real backend, not mocked, both ends: `apps/api/test/
+employee-account-creation.e2e-spec.ts` (12 tests) — record-only creation
+still works unchanged, the full create→email→login→password-change→
+real-self-service flow (a genuinely fresh employee clocking in and
+submitting a real leave request, not a fixture), the role-grant RBAC
+boundary (company_admin can grant manager, a manager cannot, proven
+both ways), the department-scoping boundary reused from the existing
+manager-creation precedent, and real Arabic email delivery via MailDev.
+`apps/web/src/features/team/add-employee.integration.spec.tsx` (3
+tests) — the actual form creating a real account with the on-screen and
+emailed passwords confirmed byte-identical, the duplicate-email error
+surfaced in the real UI, and record-only creation producing no password
+banner. Full existing suites re-run clean afterward: backend 107 e2e +
+130 unit tests, frontend 164 unit/component + 29 real-backend
+integration tests (14 files) — no regressions. Real production `next
+build` of the changed route succeeds.
+
+---
+
 ## 2026-07-31 — Super Admin dashboard: frontend
 
 Second chunk of the Super Admin dashboard (see the backend entry

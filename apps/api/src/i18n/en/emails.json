@@ -4,5 +4,13 @@
     "body": "We received a request to reset your password. This link expires in 30 minutes.",
     "linkText": "Reset your password",
     "ignoreNotice": "If you didn't request this, you can safely ignore this email — your password won't change."
+  },
+  "employeeWelcome": {
+    "subject": "Your HRMS account for {{companyName}}",
+    "body": "Hi {{name}}, an HRMS account has been created for you at {{companyName}}.",
+    "emailLabel": "Email",
+    "passwordLabel": "Temporary password",
+    "linkText": "Log in",
+    "passwordNotice": "You'll be required to set a new password the first time you log in."
   }
 }

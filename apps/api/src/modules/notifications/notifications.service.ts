@@ -90,6 +90,57 @@ export class NotificationsService {
 
     await this.email.send({ to, subject, html, text });
   }
+
+  /**
+   * Sent when a company_admin (or a manager granted employees:create — see
+   * EmployeesService) provisions a login for a new employee/manager.
+   * Unlike sendCompanyAdminWelcomeEmail, this one IS routed through the
+   * en/ar/ku TRANSLATIONS pattern — its recipients are a real pilot
+   * company's own staff, who pick their own locale, not the founder. See
+   * DECISIONS.md.
+   */
+  async sendEmployeeWelcomeEmail(params: {
+    to: string;
+    locale: Locale;
+    employeeName: string;
+    companyName: string;
+    temporaryPassword: string;
+    loginUrl: string;
+  }): Promise<void> {
+    const { to, locale, employeeName, companyName, temporaryPassword, loginUrl } = params;
+    const t = TRANSLATIONS[locale].employeeWelcome;
+    const dir = locale === "en" ? "ltr" : "rtl";
+    const vars = { name: employeeName, companyName };
+
+    const subject = interpolate(t.subject, vars);
+    const body = interpolate(t.body, vars);
+
+    const html = `<!doctype html>
+<html lang="${locale}" dir="${dir}">
+  <body style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+    <p>${escapeHtml(body)}</p>
+    <p>
+      ${escapeHtml(t.emailLabel)}: ${escapeHtml(to)}<br />
+      ${escapeHtml(t.passwordLabel)}: <code>${escapeHtml(temporaryPassword)}</code>
+    </p>
+    <p>
+      <a href="${escapeHtml(loginUrl)}" style="display: inline-block; padding: 10px 20px; background: #0f5c5c; color: #fff; text-decoration: none; border-radius: 6px;">
+        ${escapeHtml(t.linkText)}
+      </a>
+    </p>
+    <p style="color: #666; font-size: 13px;">${escapeHtml(t.passwordNotice)}</p>
+  </body>
+</html>`;
+
+    const text = `${body}\n\n${t.emailLabel}: ${to}\n${t.passwordLabel}: ${temporaryPassword}\n\n${t.linkText}: ${loginUrl}\n\n${t.passwordNotice}`;
+
+    await this.email.send({ to, subject, html, text });
+  }
+}
+
+/** Replaces every {{key}} token with vars[key] — this module's only translated strings that ever carry a runtime value (company/person names), so a full i18n interpolation library would be overkill. */
+function interpolate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => vars[key] ?? "");
 }
 
 /** Minimal, deliberately narrow — the only untrusted value ever interpolated into this HTML is the reset link itself (a server-issued JWT, not user input), but escaping it costs nothing and removes any doubt. */

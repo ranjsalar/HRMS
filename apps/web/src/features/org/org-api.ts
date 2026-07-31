@@ -1,5 +1,25 @@
 import { apiFetch } from "@/lib/api-client";
 
+export interface DepartmentDto {
+  id: string;
+  name: string;
+}
+
+export interface BranchDto {
+  id: string;
+  name: string;
+}
+
+/** Used by AddEmployeeForm's department picker — org:view scope "all" for both manager and company_admin (see fetchOrgChart's own comment), so this always returns the whole company's department list regardless of caller role. A manager's own_department creation restriction is still enforced server-side on the actual POST /employees call, not by narrowing this list. */
+export function fetchDepartments(): Promise<DepartmentDto[]> {
+  return apiFetch<DepartmentDto[]>("/departments");
+}
+
+/** Same reasoning as fetchDepartments — org:view, scope "all". */
+export function fetchBranches(): Promise<BranchDto[]> {
+  return apiFetch<BranchDto[]>("/branches");
+}
+
 export interface OrgChartNode {
   id: string;
   name: string;

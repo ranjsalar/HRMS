@@ -24,3 +24,38 @@ export interface TeamMemberDto {
 export function fetchTeam(): Promise<TeamMemberDto[]> {
   return apiFetch<TeamMemberDto[]>("/employees");
 }
+
+export interface CreateEmployeeInput {
+  fullName: string;
+  nationalId: string;
+  jobTitle: string;
+  departmentId?: string;
+  branchId?: string;
+  hireDate: string;
+  salaryBase: number;
+  currency?: "IQD" | "USD";
+  bankAccount?: string;
+  phone?: string;
+  address?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  // Present together or not at all — providing `email` is what triggers
+  // real login provisioning server-side (see EmployeesService.create()).
+  // Omitting it creates a record-only Employee with no account, the same
+  // behavior this endpoint always had.
+  email?: string;
+  role?: "employee" | "manager";
+  locale?: "en" | "ar" | "ku";
+}
+
+export interface CreateEmployeeResult extends TeamMemberDto {
+  nationalId: string;
+  bankAccount: string | null;
+  // Present only when `email` was provided — shown exactly once, matching
+  // the Super Admin dashboard's identical one-time-display convention.
+  temporaryPassword?: string;
+}
+
+export function createEmployee(input: CreateEmployeeInput): Promise<CreateEmployeeResult> {
+  return apiFetch<CreateEmployeeResult>("/employees", { method: "POST", body: input });
+}

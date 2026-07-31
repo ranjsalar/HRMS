@@ -1,8 +1,18 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { Employee, Prisma, PermissionScope } from "@prisma/client";
 import { TenantContextStorage } from "../../database/prisma/tenant-context.storage";
 import { decryptField, encryptField } from "../../common/crypto/field-encryption";
+import type { Locale } from "../../i18n/locale.type";
 import { AuditService } from "../audit/audit.service";
+import { PasswordService } from "../auth/password.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import type {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -13,6 +23,8 @@ export interface RequestActor {
   userId: string;
   ipAddress?: string;
 }
+
+export type EmployeeWithTemporaryPassword = Employee & { temporaryPassword?: string };
 
 // The ONLY fields a self-scoped employee may ever set via update() — every
 // other field on UpdateEmployeeDto (salaryBase, nationalId, bankAccount,
@@ -55,6 +67,9 @@ export class EmployeesService {
   constructor(
     private readonly tenantContext: TenantContextStorage,
     private readonly audit: AuditService,
+    private readonly password: PasswordService,
+    private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   private tx() {
@@ -89,7 +104,7 @@ export class EmployeesService {
     scope: PermissionScope,
     requestingUserId: string,
     actor: RequestActor,
-  ): Promise<Employee> {
+  ): Promise<EmployeeWithTemporaryPassword> {
     let departmentId = dto.departmentId;
 
     if (scope === "own_department") {
@@ -105,9 +120,77 @@ export class EmployeesService {
       throw new ForbiddenException("Insufficient scope to create employees");
     }
 
+    // `role`/`locale` are only meaningful alongside `email` (they describe
+    // the account being provisioned) — validated here as explicit service
+    // logic rather than a class-validator ValidateIf chain, same reasoning
+    // as the DTO's own comment. A manager (own_department scope) may
+    // provision a login, per this build's existing "manager
+    // employees:create is an opt-in per-company RBAC grant" precedent
+    // (see employee-management.e2e-spec.ts, "Manager cross-department
+    // CRUD") — but can never grant the manager role itself. See
+    // DECISIONS.md.
+    if (dto.role && !dto.email) {
+      throw new BadRequestException(
+        "`role` can only be set when creating a login (email is required)",
+      );
+    }
+    if (dto.locale && !dto.email) {
+      throw new BadRequestException(
+        "`locale` can only be set when creating a login (email is required)",
+      );
+    }
+    if (dto.role === "manager" && scope !== "all") {
+      throw new ForbiddenException(
+        "Only a company_admin can create an account with the manager role",
+      );
+    }
+
+    let userId: string | undefined;
+    let temporaryPassword: string | undefined;
+    // Populated only when dto.email is set — used after employee.create()
+    // below to send the welcome email last, matching SuperAdminService's
+    // ordering (see the comment further down).
+    let welcomeEmailParams: { locale: Locale; companyName: string } | undefined;
+
+    if (dto.email) {
+      const existing = await this.tx().user.findFirst({
+        where: { companyId, email: dto.email },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ConflictException(
+          `A user with email "${dto.email}" already exists in this company.`,
+        );
+      }
+
+      const company = await this.tx().company.findUniqueOrThrow({
+        where: { id: companyId },
+        select: { name: true, localeDefault: true },
+      });
+      const locale = dto.locale ?? (company.localeDefault as Locale);
+
+      temporaryPassword = generateTemporaryPassword();
+      const passwordHash = await this.password.hash(temporaryPassword);
+
+      const user = await this.tx().user.create({
+        data: {
+          companyId,
+          email: dto.email,
+          passwordHash,
+          role: dto.role ?? "employee",
+          locale,
+          mustChangePassword: true,
+          twoFaEnabled: false, // mandatory for company_admin/superadmin only — not this endpoint's roles
+        },
+      });
+      userId = user.id;
+      welcomeEmailParams = { locale, companyName: company.name };
+    }
+
     const employee = await this.tx().employee.create({
       data: {
         companyId,
+        userId,
         fullName: dto.fullName,
         nationalId: encryptField(dto.nationalId),
         jobTitle: dto.jobTitle,
@@ -130,11 +213,35 @@ export class EmployeesService {
       entity: "Employee",
       entityId: employee.id,
       ipAddress: actor.ipAddress,
+      metadata: dto.email ? { loginCreated: true, role: dto.role ?? "employee" } : undefined,
     });
+
+    // Sent LAST, after the User/Employee rows and audit log already
+    // exist, matching SuperAdminService's same ordering: a transient
+    // email-delivery failure shouldn't erase an otherwise-successful
+    // account creation, and the temp password is still in the API
+    // response either way. Same value returned to the caller below and
+    // emailed here — never regenerated between the two. See DECISIONS.md.
+    if (dto.email && temporaryPassword && welcomeEmailParams) {
+      const frontendUrl = this.config.getOrThrow<string>("FRONTEND_URL");
+      await this.notifications.sendEmployeeWelcomeEmail({
+        to: dto.email,
+        locale: welcomeEmailParams.locale,
+        employeeName: dto.fullName,
+        companyName: welcomeEmailParams.companyName,
+        temporaryPassword,
+        loginUrl: `${frontendUrl}/login`,
+      });
+    }
 
     // Already have the plaintext right here — no need to round-trip decrypt
     // what was just encrypted.
-    return { ...employee, nationalId: dto.nationalId, bankAccount: dto.bankAccount ?? null };
+    return {
+      ...employee,
+      nationalId: dto.nationalId,
+      bankAccount: dto.bankAccount ?? null,
+      ...(temporaryPassword ? { temporaryPassword } : {}),
+    };
   }
 
   async update(
@@ -279,4 +386,9 @@ export class EmployeesService {
       bankAccount: employee.bankAccount ? decryptField(employee.bankAccount) : null,
     };
   }
+}
+
+/** Same construction as create-company.ts / SuperAdminService's generateTemporaryPassword — see DECISIONS.md. */
+function generateTemporaryPassword(): string {
+  return randomBytes(18).toString("base64url");
 }
