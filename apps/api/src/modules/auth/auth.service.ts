@@ -68,6 +68,10 @@ export class AuthService {
       throw new UnauthorizedException(GENERIC_LOGIN_ERROR);
     }
 
+    if (authenticated.companyId) {
+      await this.rejectIfCompanyNotActive(authenticated.companyId);
+    }
+
     await this.prismaAuth.resetFailedAttempts(authenticated.id);
 
     if (authenticated.twoFaEnabled) {
@@ -281,6 +285,37 @@ export class AuthService {
   }
 
   // ── internals ──────────────────────────────────────────────────────
+
+  /**
+   * A correct password is not enough — a suspended (or archived) company's
+   * users must be refused with an honest, specific reason, not just fail
+   * open because RLS/tenant-scoping alone doesn't apply at login time
+   * (there is no tenant transaction yet; the login lookup itself uses the
+   * cross-tenant hrms_auth connection). Checked via the Super Admin
+   * connection since there's no tenant context to scope this read to
+   * either. Deliberately runs BEFORE resetFailedAttempts/2FA — a blocked
+   * account shouldn't reset lockout state or spend a 2FA round-trip.
+   *
+   * Both non-"active" statuses are blocked here, not just "suspended":
+   * this endpoint's Company.status column has no other legitimate value
+   * once a company exists, and there is no scenario where "archived"
+   * should still allow login even though the suspend/reactivate dashboard
+   * endpoint (see SuperAdminService) only ever toggles active<->suspended
+   * and never sets "archived" itself. See DECISIONS.md.
+   */
+  private async rejectIfCompanyNotActive(companyId: string): Promise<void> {
+    const company = await this.prismaSuperAdmin.company.findUnique({
+      where: { id: companyId },
+      select: { status: true },
+    });
+    if (!company || company.status === "active") return;
+
+    throw new UnauthorizedException(
+      company.status === "suspended"
+        ? "This company's account has been suspended. Contact your HRMS administrator."
+        : "This company's account is no longer active. Contact your HRMS administrator.",
+    );
+  }
 
   private async recordFailedLogin(candidate: AuthLookupUser): Promise<void> {
     const { failedLoginAttempts, lockedUntil } = this.lockout.recordFailure(

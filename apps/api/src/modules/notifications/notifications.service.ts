@@ -42,6 +42,54 @@ export class NotificationsService {
 
     await this.email.send({ to, subject: t.subject, html, text });
   }
+
+  /**
+   * Sent once, at company-provisioning time, by the Super Admin dashboard
+   * (see SuperAdminService) — deliberately English-only, with strings
+   * inlined here rather than added to the en/ar/ku emails.json structure
+   * the rest of NotificationsService uses. Every other email in this
+   * class is addressed to a company's own employees, who pick their UI
+   * locale (see PasswordResetRequestDto); this one is addressed to a
+   * newly-created company_admin by the founder (the only superadmin),
+   * describing a superadmin-only surface that is itself English-only (see
+   * DECISIONS.md, "Super Admin dashboard: English-only"). Adding ar/ku
+   * keys with no real translated content — or worse, English text copied
+   * under ar/ku keys — would misrepresent this as a localized email when
+   * it structurally never can be one. If that ever changes, this should
+   * move into the TRANSLATIONS-keyed pattern like sendPasswordResetEmail.
+   */
+  async sendCompanyAdminWelcomeEmail(params: {
+    to: string;
+    adminName: string;
+    companyName: string;
+    temporaryPassword: string;
+    loginUrl: string;
+  }): Promise<void> {
+    const { to, adminName, companyName, temporaryPassword, loginUrl } = params;
+    const subject = `Your HRMS account for ${companyName}`;
+
+    const html = `<!doctype html>
+<html lang="en" dir="ltr">
+  <body style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+    <p>Hi ${escapeHtml(adminName)},</p>
+    <p>An HRMS account has been created for you as the administrator of <strong>${escapeHtml(companyName)}</strong>.</p>
+    <p>
+      Email: ${escapeHtml(to)}<br />
+      Temporary password: <code>${escapeHtml(temporaryPassword)}</code>
+    </p>
+    <p>
+      <a href="${escapeHtml(loginUrl)}" style="display: inline-block; padding: 10px 20px; background: #0f5c5c; color: #fff; text-decoration: none; border-radius: 6px;">
+        Log in
+      </a>
+    </p>
+    <p style="color: #666; font-size: 13px;">You'll be required to set a new password the first time you log in.</p>
+  </body>
+</html>`;
+
+    const text = `Hi ${adminName},\n\nAn HRMS account has been created for you as the administrator of ${companyName}.\n\nEmail: ${to}\nTemporary password: ${temporaryPassword}\n\nLog in: ${loginUrl}\n\nYou'll be required to set a new password the first time you log in.`;
+
+    await this.email.send({ to, subject, html, text });
+  }
 }
 
 /** Minimal, deliberately narrow — the only untrusted value ever interpolated into this HTML is the reset link itself (a server-issued JWT, not user input), but escaping it costs nothing and removes any doubt. */

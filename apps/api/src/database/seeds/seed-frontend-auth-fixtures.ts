@@ -53,6 +53,12 @@ export const FRONTEND_AUTH_FIXTURES = {
   // covered by the backend's own leave.e2e-spec.ts.
   leaveTypeName: "Annual Leave",
   leaveTypeDaysPerYear: 20,
+  // Super Admin dashboard integration tests (companyId: null — not
+  // attached to the fixture company above at all) — same fixed-secret
+  // reasoning as adminTotpSecret.
+  superadminEmail: "frontend-e2e-superadmin@hrms.test",
+  superadminPassword: "Frontend-E2E-Superadmin-Pass-1",
+  superadminTotpSecret: "KRSXG5CTMVRXEZLUEBSXG5CTMVRXEZLU",
 } as const;
 
 async function main(): Promise<void> {
@@ -156,12 +162,23 @@ async function main(): Promise<void> {
     // "there happened to be nobody else."
     await upsertUnmanagedEmployee(prisma, company.id, otherDepartment.id, branch.id);
 
+    await upsertUser(prisma, {
+      companyId: null,
+      email: FRONTEND_AUTH_FIXTURES.superadminEmail,
+      passwordHash: await passwordService.hash(FRONTEND_AUTH_FIXTURES.superadminPassword),
+      role: "superadmin",
+      mustChangePassword: false,
+      twoFaEnabled: true,
+      twoFaSecret: encryptField(FRONTEND_AUTH_FIXTURES.superadminTotpSecret),
+    });
+
     console.log("Frontend auth fixtures ready:");
     console.log(`  Company: ${FRONTEND_AUTH_FIXTURES.companyName} (${company.id})`);
     console.log(`  Branch: ${FRONTEND_AUTH_FIXTURES.branchName} (${branch.id})`);
     console.log(`  Admin (2FA-enrolled): ${FRONTEND_AUTH_FIXTURES.adminEmail}`);
     console.log(`  Employee (no 2FA):    ${FRONTEND_AUTH_FIXTURES.employeeEmail}`);
     console.log(`  Manager (no 2FA):     ${FRONTEND_AUTH_FIXTURES.managerEmail}`);
+    console.log(`  Superadmin (2FA-enrolled): ${FRONTEND_AUTH_FIXTURES.superadminEmail}`);
   } finally {
     await prisma.$disconnect();
   }
@@ -176,10 +193,10 @@ async function upsertCompany(prisma: PrismaClient, name: string) {
 async function upsertUser(
   prisma: PrismaClient,
   data: {
-    companyId: string;
+    companyId: string | null;
     email: string;
     passwordHash: string;
-    role: "company_admin" | "manager" | "employee";
+    role: "company_admin" | "manager" | "employee" | "superadmin";
     mustChangePassword: boolean;
     twoFaEnabled: boolean;
     twoFaSecret: string | null;

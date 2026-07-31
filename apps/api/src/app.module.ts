@@ -15,6 +15,7 @@ import { AttendanceModule } from "./modules/attendance/attendance.module";
 import { LeaveModule } from "./modules/leave/leave.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { HolidaysModule } from "./modules/holidays/holidays.module";
+import { SuperAdminModule } from "./modules/superadmin/superadmin.module";
 import { AuthGuard } from "./common/guards/auth.guard";
 import { MustChangePasswordGuard } from "./common/guards/must-change-password.guard";
 import { RbacGuard } from "./common/guards/rbac.guard";
@@ -78,6 +79,7 @@ import { GlobalExceptionFilter } from "./common/filters/global-exception.filter"
     LeaveModule,
     PayrollModule,
     HolidaysModule,
+    SuperAdminModule,
   ],
   controllers: [AppController],
   providers: [

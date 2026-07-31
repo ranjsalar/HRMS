@@ -90,7 +90,8 @@
     "documents": "بەڵگەنامەکان",
     "team": "تیم",
     "orgChart": "پێکهاتەی ڕێکخراو",
-    "leaveApprovals": "پەسەندکردنی مۆڵەت"
+    "leaveApprovals": "پەسەندکردنی مۆڵەت",
+    "superadmin": "سوپەر ئەدمین"
   },
   "dashboard": {
     "greeting": "بەخێربێیت، {{name}}",

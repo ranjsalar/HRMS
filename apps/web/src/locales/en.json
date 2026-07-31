@@ -90,7 +90,8 @@
     "documents": "Documents",
     "team": "Team",
     "orgChart": "Org chart",
-    "leaveApprovals": "Leave approvals"
+    "leaveApprovals": "Leave approvals",
+    "superadmin": "Super Admin"
   },
   "dashboard": {
     "greeting": "Welcome, {{name}}",

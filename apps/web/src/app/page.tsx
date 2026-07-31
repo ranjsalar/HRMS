@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ClockWidget } from "@/features/attendance/ClockWidget";
@@ -16,8 +18,22 @@ export default function Home() {
   const { ready } = useRequireAuth();
   const { user } = useAuth();
   const { t, dir } = useTranslation();
+  const router = useRouter();
 
-  if (!ready) {
+  // A superadmin has no Employee record and no company-scoped
+  // permissions — every widget below would just render an error panel
+  // for that session. This is the one landing page every login redirects
+  // to (see login/page.tsx), so a superadmin needs to be sent straight
+  // to their own dashboard instead. See DECISIONS.md, "Super Admin
+  // dashboard: frontend".
+  const isSuperadmin = ready && user?.role === "superadmin";
+  useEffect(() => {
+    if (isSuperadmin) {
+      router.replace("/superadmin");
+    }
+  }, [isSuperadmin, router]);
+
+  if (!ready || isSuperadmin) {
     return (
       <main dir={dir} className="flex min-h-screen flex-col items-center gap-4 p-8">
         <Skeleton className="h-8 w-48" />

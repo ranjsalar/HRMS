@@ -7,6 +7,226 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-31 — Super Admin dashboard: frontend
+
+Second chunk of the Super Admin dashboard (see the backend entry
+directly below this one). One page, `/superadmin`: a company list,
+a "New company" form, and a per-row Suspend/Reactivate toggle — matching
+the three backend endpoints exactly, nothing added.
+
+### English-only, confirmed and implemented as a genuine constraint, not just a default
+
+The founder asked me to confirm the English-only reasoning made sense.
+It does: this surface is used exclusively by the founder (the only
+superadmin), never by a pilot company's employees, so there is no
+audience for `ar`/`ku` content here at all. Implemented as an actual
+constraint, not an accident of the current locale cookie defaulting to
+"en": `SuperAdminDashboard.tsx` and `/superadmin/page.tsx` contain zero
+calls to `useTranslation()`/`t()` — every string is a plain English
+literal, and `formatDate()` is called with the "en" locale pinned
+explicitly rather than reading the viewer's cookie. A superadmin who had
+previously set an `ar`/`ku` locale cookie (e.g. from testing the rest of
+the app) still sees this page fully in English. The page also uses its
+own small header instead of the shared `AppNav` component, since
+`AppNav` pulls in `LanguageSwitcher` and links to company-scoped pages
+that don't apply to a superadmin session.
+
+### A necessary side effect: superadmin now needs a real landing page
+
+Before this pass, "superadmin" was a role that only ever acted via CLI —
+nothing routed a superadmin session through the web login UI at all.
+Giving it one for the first time exposed a real, immediate problem: the
+existing post-login redirect target (`/`, the employee/manager
+dashboard) renders `ClockWidget`/`LeaveBalanceWidget`/`HolidaysWidget`,
+all of which assume a company-scoped session with a real `Employee`
+record — a superadmin has neither. Fixed in `apps/web/src/app/page.tsx`:
+a superadmin session is redirected to `/superadmin` immediately, before
+any of those widgets render. This is a direct, unavoidable consequence
+of this feature (not scope creep) — without it, the very first thing the
+founder would see after using this new dashboard's login path is a page
+full of error panels.
+
+### Row-level bug found via the real-backend integration test, not by inspection
+
+The Suspend/Reactivate button's handler originally called the same
+`load()` function the initial page load uses, which sets the top-level
+`loading` flag — that flag controls whether the ENTIRE company list
+renders or gets replaced by the loading skeleton. Toggling a single
+row's status therefore briefly unmounted and remounted the whole list on
+every click, including the row just acted on. This didn't show up by
+reading the code; it showed up as a real, reproducible timeout in
+`superadmin.integration.spec.tsx` (a DOM reference held across the
+update went stale once React tore down and rebuilt that list item) —
+confirmed via a direct `curl` PATCH against the real dev API that the
+backend update itself completed instantly, isolating the bug to the
+frontend's re-render strategy. Fixed by patching just the affected row
+in local state from the real PATCH response, instead of re-fetching and
+re-rendering the whole list. Same bug would have caused a visible flicker
+for a real user, not just a broken test.
+
+### What's verified
+
+Real backend, not mocked: `superadmin.integration.spec.tsx` (3 tests) —
+create-company through the actual form (temp password banner rendered,
+new row appears with the right status/employee count), suspend +
+reactivate via the actual toggle button with the row updating in place,
+and a duplicate-name submission surfacing the exact server error message
+without silently returning to the list. Required adding a stable
+superadmin login fixture to `seed-frontend-auth-fixtures.ts` (2FA
+pre-enrolled, same fixed-secret convention as the existing
+`company_admin` fixture) since no superadmin fixture existed before this
+pass — no prior frontend test needed one. Full existing frontend suite
+re-run clean afterward: 164 unit/component tests (37 files) and all 12
+real-backend integration spec files (23 tests total, including this new
+one) — no regressions from the `AppNav`/home-page routing changes.
+
+---
+
+## 2026-07-31 — Super Admin dashboard: backend (endpoints, guard, audit, suspend-blocks-login)
+
+New scope, per the founder's explicit brief: replace the CLI-only
+company/admin provisioning with a real, minimal web dashboard — three
+endpoints (list companies, create company + first admin, suspend/
+reactivate), superadmin-gated, tested. This entry covers the backend
+chunk; the frontend UI is a separate entry once built. Several judgment
+calls were delegated explicitly ("your call, document the reasoning") —
+recorded below.
+
+### A new, non-RBAC authorization path was required — RbacGuard doesn't fit
+
+Every existing HTTP endpoint that checks authorization does it through
+`@RequirePermission(module, action)` + `RbacGuard` + `PermissionCheckService`
+— fundamentally a per-company RolePermission lookup. Superadmin sessions
+have `companyId: null` and no tenant transaction ever opens for them
+(`TenantScopeInterceptor` explicitly skips when there's no companyId —
+its own comment already anticipated this: "must use PrismaSuperAdminService
+directly, gated by a confirmed-superadmin check in the RBAC guard layer").
+`RbacController` (the one other place a superadmin session was considered)
+explicitly REJECTS `companyId: null` rather than trying to handle it —
+there was no precedent to extend.
+
+Built a new, deliberately separate mechanism instead of forcing this
+through the tenant-scoped RBAC system: `@RequireSuperAdmin()` (a
+`SetMetadata` marker, same shape as `@Public()`) + `SuperAdminGuard` (a
+direct `request.user.role === "superadmin"` check), applied via
+`@UseGuards(SuperAdminGuard)` at the controller level on the new
+`SuperAdminController` — not registered globally in `app.module.ts`,
+since it's only relevant to this one controller. It runs after the
+global guard chain (Nest resolves global guards before controller-level
+ones), so `request.user` is always populated by `AuthGuard` by the time
+it runs. Deliberately fails CLOSED on a missing `@RequireSuperAdmin()`
+(the opposite default from `@Public()`/`@RequirePermission()`) — this
+controller has no legitimate non-superadmin route, so "undecorated"
+should never mean "allowed." Proven with a real e2e test: a
+`company_admin` token gets a clean 403 (not a 404, not a hang) on all
+three routes, and no token at all gets 401.
+
+### Audit logging bypasses `AuditService` — it structurally can't be used here
+
+`AuditService.record()` writes through `TenantContextStorage`'s
+transaction and THROWS if none exists — by design, so an audit entry and
+the write it describes always commit or roll back together. Superadmin
+operations use `PrismaSuperAdminService` directly; no tenant transaction
+ever exists for them. Rather than weakening `AuditService`'s invariant
+(e.g. making the tenant-context check optional) for the sake of one
+caller, `SuperAdminService` writes `AuditLog` rows directly via the
+superadmin connection. This is safe because `AuditLog.companyId` is
+NOT nullable but is always concretely known at both call sites (the
+just-created company's id; the target company's id for a status change)
+— there's no case here needing a "no company yet" row. `userId` is the
+acting superadmin's own id.
+
+### Suspend/reactivate — endpoint scope vs. what login actually blocks
+
+The founder asked explicitly whether "archived" (a third `CompanyStatus`
+enum value, pre-existing in the schema) needs handling in this pass.
+Decision: the suspend/reactivate ENDPOINT only ever accepts
+`"active"`/`"suspended"` (`UpdateCompanyStatusDto` rejects `"archived"`
+with a 400) — there's no UI or use case for archiving a company in this
+pass, matching the founder's explicit scope boundary ("no editing beyond
+status" implicitly means no new status semantics either). However, the
+LOGIN-TIME check (`AuthService.rejectIfCompanyNotActive`) blocks ANY
+non-`"active"` status, including a hypothetical `"archived"` row set
+some other way (direct DB access, a future admin tool) — since the
+status value is already in hand at that point and an inactive company's
+users should never be able to log in regardless of which inactive state
+caused it. Proven with a real e2e test that sets `status: "archived"`
+directly via the superadmin connection (bypassing the dashboard
+entirely) and confirms login is still refused.
+
+RLS alone does NOT block a suspended company's users from logging in —
+there is no tenant transaction/RLS context at all during the login
+lookup (`PrismaAuthService`'s cross-tenant `hrms_auth` connection, used
+specifically because the company isn't known yet). This was called out
+explicitly in the founder's brief and implemented as an explicit check
+(`AuthService.rejectIfCompanyNotActive`, using the superadmin connection
+since there's nothing to scope the read to yet either), not assumed.
+Runs BEFORE `resetFailedAttempts`/2FA — a blocked account shouldn't reset
+lockout state or spend a 2FA round-trip. Verified live: suspending mid-
+session doesn't revoke an already-issued access token (unchanged,
+existing short-TTL behavior — same trade-off `MustChangePasswordGuard`'s
+comment already documents for its own claim), but blocks every
+subsequent login attempt with a specific, honest message
+("...suspended..." vs. "...no longer active...").
+
+### Welcome email: inline English strings, not the en/ar/ku emails.json structure
+
+The founder asked me to decide between extending the existing
+locale-keyed `i18n/{en,ar,ku}/emails.json` pattern (used by
+`sendPasswordResetEmail`) or a simpler one-off, and to document the
+reasoning. Went with a one-off: `NotificationsService
+.sendCompanyAdminWelcomeEmail` has its English strings inlined directly,
+not added to the emails.json files. Every other email in that class is
+addressed to a company's own employees, who pick their own UI locale;
+this one is addressed to a newly-created company_admin by the founder
+(the only superadmin), announcing access to a dashboard surface that is
+itself English-only by design (see below) — there is no real scenario
+where this email is ever anything but English. Adding `ar`/`ku` keys
+with no genuine translated content (or worse, English text copied under
+those keys) would misrepresent it as localized when it structurally
+never can be. If that ever changes, this should move into the
+`TRANSLATIONS`-keyed pattern like `sendPasswordResetEmail`.
+
+### Admin "name" is not persisted — used only to greet in the welcome email
+
+The dashboard's create-company form collects "admin's name," but `User`
+has no name column (names live on `Employee`, a separate model this
+admin account has no row in — the CLI never created one either).
+Decision: accept `adminName` in `CreateCompanyDto`, use it once to
+personalize the welcome email's greeting, and don't persist it anywhere.
+Adding a `User.fullName` column (or auto-creating an `Employee` row for
+every company_admin) is a real, reasonable future extension if the
+founder wants the name tracked/displayed elsewhere later, but wasn't
+built now — out of scope per the founder's own "resist scope creep"
+framing, and there's no existing consumer of a company_admin's display
+name anywhere in the app today.
+
+### Rate limiting: no new code needed
+
+The founder asked to flag rate limiting "if any [unauthenticated
+surface] exists." It doesn't: every route on `SuperAdminController`
+requires a valid access token (no `@Public()` anywhere in this module),
+so `GeneralApiThrottlerGuard` — already global, already covering every
+authenticated route — applies here automatically. No new throttler was
+added.
+
+### What's verified vs. not
+
+Fully verified against the real dev stack: all three endpoints, the
+RBAC 403/401 boundary, suspend/reactivate + the login-blocking check
+(including the "archived, set outside the dashboard" case), the
+create-company flow end-to-end through real MailDev delivery (confirming
+the emailed and on-screen temp password values are byte-identical), and
+a freshly created company_admin completing mandatory 2FA enrollment +
+mandatory password change and then using the system normally
+(`GET /auth/me`) — see `apps/api/test/superadmin.e2e-spec.ts` (15
+tests). Full existing e2e suite (95 tests, 12 files) and unit suite (130
+tests) re-run clean afterward — no regressions from the `AuthService
+.login()` change. Frontend dashboard UI is the next chunk, not yet
+built.
+
+---
+
 ## 2026-07-30 — CI follow-up: the earlier payroll timeout fix missed a second, backend-side test waiting on the same job
 
 The item-8 CI entry's "fifth issue" fixed `apps/web/src/features/payroll/

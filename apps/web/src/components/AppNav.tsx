@@ -13,6 +13,7 @@ interface NavLink {
   href: string;
   labelKey: string;
   managerOnly?: boolean;
+  superadminOnly?: boolean;
 }
 
 const LINKS: NavLink[] = [
@@ -24,6 +25,10 @@ const LINKS: NavLink[] = [
   { href: "/team", labelKey: "nav.team", managerOnly: true },
   { href: "/leave/approvals", labelKey: "nav.leaveApprovals", managerOnly: true },
   { href: "/org-chart", labelKey: "nav.orgChart", managerOnly: true },
+  // The one link a superadmin session sees here — everything past it
+  // (/superadmin/*) is deliberately English-only, unlike this shared nav
+  // chrome itself. See DECISIONS.md, "Super Admin dashboard: frontend".
+  { href: "/superadmin", labelKey: "nav.superadmin", superadminOnly: true },
 ];
 
 /**
@@ -39,6 +44,7 @@ export function AppNav() {
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const isManager = user ? MANAGER_ROLES.has(user.role) : false;
+  const isSuperadmin = user?.role === "superadmin";
 
   return (
     <header dir={dir} className="flex flex-col gap-3 border-b border-neutral-200 pb-4">
@@ -52,7 +58,10 @@ export function AppNav() {
         </div>
       </div>
       <nav className="flex flex-wrap gap-2">
-        {LINKS.filter((link) => !link.managerOnly || isManager).map((link) => {
+        {LINKS.filter(
+          (link) =>
+            (!link.managerOnly || isManager) && (!link.superadminOnly || isSuperadmin),
+        ).map((link) => {
           const active = pathname === link.href;
           return (
             <Link

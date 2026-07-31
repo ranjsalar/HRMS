@@ -90,7 +90,8 @@
     "documents": "المستندات",
     "team": "الفريق",
     "orgChart": "الهيكل التنظيمي",
-    "leaveApprovals": "موافقات الإجازات"
+    "leaveApprovals": "موافقات الإجازات",
+    "superadmin": "المشرف العام"
   },
   "dashboard": {
     "greeting": "مرحبًا، {{name}}",
