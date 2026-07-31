@@ -91,6 +91,7 @@
     "team": "تیم",
     "orgChart": "پێکهاتەی ڕێکخراو",
     "leaveApprovals": "پەسەندکردنی مۆڵەت",
+    "overview": "چاوپێکەوتنی گشتی کۆمپانیا",
     "superadmin": "سوپەر ئەدمین"
   },
   "dashboard": {
@@ -222,6 +223,7 @@
     "empty": "هیچ ئەندامێکی تیم نییە بۆ نیشاندان.",
     "loadError": "نەمانتوانی تیمەکەت باربکەین.",
     "correctAttendance": "چاککردنەوەی ئامادەبوون",
+    "noDepartment": "بێ بەش",
     "addEmployee": {
       "addButton": "زیادکردنی کارمەند",
       "title": "زیادکردنی کارمەند",
@@ -262,6 +264,20 @@
     "approving": "پەسەندکردن...",
     "reject": "ڕەتکردنەوە",
     "rejecting": "ڕەتکردنەوە..."
+  },
+  "overview": {
+    "title": "چاوپێکەوتنی گشتی کۆمپانیا",
+    "loadError": "نەمانتوانی چاوپێکەوتنی کۆمپانیا باربکەین.",
+    "totalEmployees": "کۆی کارمەندان",
+    "pendingLeaveRequests": "داواکاری مۆڵەتی چاوەڕوان",
+    "todayAttendance": {
+      "title": "ئامادەبوونی ئەمڕۆ",
+      "clockedIn": "ئامادەیە",
+      "clockedOut": "ڕۆیشتووە",
+      "absent": "ئامادەبوونی تۆمار نەکراوە",
+      "clockInTime": "چوونە ژوورەوە: {{time}}",
+      "clockOutTime": "چوونە دەرەوە: {{time}}"
+    }
   },
   "orgChart": {
     "title": "پێکهاتەی ڕێکخراو",

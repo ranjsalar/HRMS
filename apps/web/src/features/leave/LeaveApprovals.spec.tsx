@@ -18,6 +18,7 @@ const TEAM = [
 const LEAVE_TYPES = [
   { id: "lt1", companyId: "c1", name: "Annual Leave", daysPerYear: 30, requiresApproval: true, paid: true, active: true },
 ];
+const DEPARTMENTS = [{ id: "d1", name: "Engineering" }];
 
 function renderApprovals() {
   return render(
@@ -33,6 +34,7 @@ function mockBase(pending: unknown[]): void {
     if (p === "/leave-requests?status=pending") return pending;
     if (p === "/employees") return TEAM;
     if (p === "/leave-types") return LEAVE_TYPES;
+    if (p === "/departments") return DEPARTMENTS;
     if (p.startsWith("/leave-requests/preview")) return { workingDays: 3 };
     if (p.startsWith("/leave-balances?employeeId=")) {
       return [{ id: "b1", employeeId: "e1", leaveTypeId: "lt1", year: 2026, balance: "5.00" }];
@@ -58,7 +60,7 @@ describe("LeaveApprovals", () => {
     ]);
     renderApprovals();
 
-    expect(await screen.findByText("Alice — Annual Leave")).toBeInTheDocument();
+    expect(await screen.findByText("Alice · Engineering — Annual Leave")).toBeInTheDocument();
     expect(await screen.findByText("3 working day(s) will be deducted")).toBeInTheDocument();
     expect(screen.getByText("5 day(s) remaining in this leave type")).toBeInTheDocument();
   });
@@ -74,6 +76,7 @@ describe("LeaveApprovals", () => {
       }
       if (p === "/employees") return TEAM;
       if (p === "/leave-types") return LEAVE_TYPES;
+      if (p === "/departments") return DEPARTMENTS;
       if (p.startsWith("/leave-requests/preview")) return { workingDays: 3 };
       if (p.startsWith("/leave-balances?employeeId=")) {
         return [{ id: "b1", employeeId: "e1", leaveTypeId: "lt1", year: 2026, balance: "5.00" }];
@@ -85,7 +88,7 @@ describe("LeaveApprovals", () => {
     });
     renderApprovals();
 
-    await screen.findByText("Alice — Annual Leave");
+    await screen.findByText("Alice · Engineering — Annual Leave");
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByText("No pending leave requests.")).toBeInTheDocument();
@@ -99,6 +102,7 @@ describe("LeaveApprovals", () => {
       }
       if (p === "/employees") return TEAM;
       if (p === "/leave-types") return LEAVE_TYPES;
+      if (p === "/departments") return DEPARTMENTS;
       if (p.startsWith("/leave-requests/preview")) return { workingDays: 3 };
       if (p.startsWith("/leave-balances?employeeId=")) return [];
       if (p === "/leave-requests/r1/approve" && options?.method === "POST") {
@@ -109,12 +113,12 @@ describe("LeaveApprovals", () => {
     });
     renderApprovals();
 
-    const row = (await screen.findByText("Alice — Annual Leave")).closest("li")!;
+    const row = (await screen.findByText("Alice · Engineering — Annual Leave")).closest("li")!;
     await userEvent.click(within(row).getByRole("button", { name: "Approve" }));
 
     expect(
       await within(row).findByText("Insufficient leave balance: requesting 3 working day(s), 0 remaining."),
     ).toBeInTheDocument();
-    expect(screen.getByText("Alice — Annual Leave")).toBeInTheDocument();
+    expect(screen.getByText("Alice · Engineering — Annual Leave")).toBeInTheDocument();
   });
 });

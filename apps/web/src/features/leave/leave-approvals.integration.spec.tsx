@@ -100,7 +100,9 @@ describe("LeaveApprovals — real backend integration", () => {
       },
       { timeout: 15000 },
     );
-    expect(within(row!).getByText("Frontend E2E Employee — Annual Leave")).toBeInTheDocument();
+    expect(
+      within(row!).getByText("Frontend E2E Employee · Frontend E2E Department — Annual Leave"),
+    ).toBeInTheDocument();
 
     await within(row!).findByText(/working day\(s\) will be deducted/, {}, { timeout: 10000 });
     await userEvent.click(within(row!).getByRole("button", { name: "Approve" }));

@@ -91,6 +91,7 @@
     "team": "Team",
     "orgChart": "Org chart",
     "leaveApprovals": "Leave approvals",
+    "overview": "Company overview",
     "superadmin": "Super Admin"
   },
   "dashboard": {
@@ -222,6 +223,7 @@
     "empty": "No team members to show.",
     "loadError": "Couldn't load your team.",
     "correctAttendance": "Correct attendance",
+    "noDepartment": "No department",
     "addEmployee": {
       "addButton": "Add employee",
       "title": "Add employee",
@@ -262,6 +264,20 @@
     "approving": "Approving…",
     "reject": "Reject",
     "rejecting": "Rejecting…"
+  },
+  "overview": {
+    "title": "Company overview",
+    "loadError": "Couldn't load the company overview.",
+    "totalEmployees": "Total employees",
+    "pendingLeaveRequests": "Pending leave requests",
+    "todayAttendance": {
+      "title": "Today's attendance",
+      "clockedIn": "Clocked in",
+      "clockedOut": "Clocked out",
+      "absent": "Not clocked in",
+      "clockInTime": "In: {{time}}",
+      "clockOutTime": "Out: {{time}}"
+    }
   },
   "orgChart": {
     "title": "Org chart",

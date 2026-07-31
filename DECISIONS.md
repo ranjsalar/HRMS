@@ -7,6 +7,118 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-07-31 — Verification-pass item 3 (deferred, not built): push notifications
+
+The original MVP module list (`HRMS-Project-Plan.md`) lists "Email + push"
+under Notifications. Only email was ever built. Per the founder's explicit
+call: staying deferred, not treated as a gap to close — push notifications
+without a mobile client to receive them is unusual scope for a currently
+web-only product, and this build's mobile app hasn't started yet (Phase 3,
+deliberately after web is pilot-validated — see the Project Plan's own
+build order). Revisit once the mobile app exists.
+
+---
+
+## 2026-07-31 — Verification-pass item 2: company-wide admin overview
+
+A real `/overview` screen for `company_admin` only (never a wider version
+of a manager's own department-scoped Team view — that stays unchanged).
+Shows total employee count, company-wide pending-leave count, and a
+"who's clocked in today" list — the exact three things the verification
+pass found were entirely absent. Also adds department context to the
+existing `TeamList`/`LeaveApprovals` screens, closing finding #1.1 (admin
+saw company-wide data with zero department framing).
+
+### Zero new backend logic — everything reuses endpoints that already existed
+
+Every number on this screen is derived client-side from data the backend
+was already willing to hand a company-wide caller: `GET /employees`
+(count), `GET /leave-requests?status=pending` (count), and — per the
+verification pass's own explicit instruction — the already-built,
+already-tested `GET /attendance` (`teamTimesheet`) endpoint that had
+**zero frontend consumers** before this pass, called with `from=to=today`.
+No new controller, service method, or permission grant was added. A
+manager hitting any of these same endpoints directly still only ever
+gets their own department's slice back (existing server-side scoping,
+unchanged) — this screen is a company_admin-only *presentation* of data
+the backend already exposed, not a new data-exposure surface.
+
+### Department context: prop vs. internal fetch, decided per component's existing test shape
+
+`TeamList`'s existing unit tests use single-shot, order-dependent
+`apiFetch` mocks (`mockResolvedValueOnce`) — adding a second internal
+fetch there would have required rewriting every one of them blind.
+Instead, `TeamList` takes `departments` as an **optional prop** (default:
+show nothing extra, so no existing caller/test breaks); `team/page.tsx`
+fetches it once and passes it down. `LeaveApprovals`, by contrast,
+already used a URL-dispatch `mockImplementation` pattern from the start —
+adding `fetchDepartments()` as a fourth parallel fetch there was a
+one-line addition to each mock, so it fetches its own department data
+internally. Same underlying capability, two different integration
+shapes, chosen by what each component's existing tests already assumed
+— not a general rule that should be read as "sometimes fetch internally,
+sometimes take a prop" without that reasoning attached.
+
+### A real bug the integration test caught, not inspection
+
+`CompanyOverview` originally resolved each row's status label via
+`` t(`overview.todayAttendance.${row.status}`) `` — but `TodayStatus`'s
+TypeScript values are snake_case (`"clocked_in"`) while this file's own
+i18n keys are camelCase (`clockedIn`, matching the rest of this
+codebase's key-naming convention). The template-string concatenation
+silently produced a key that existed in no locale, so the fallback
+literal string `"overview.todayAttendance.clocked_in"` rendered instead
+of real text — caught immediately by the real-backend integration test
+(which renders real translated output, not a mock), invisible to
+`tsc`/lint since both sides are plain strings. Fixed with an explicit
+`Record<TodayStatus, string>` map instead of string concatenation.
+
+### A separate, pre-existing problem surfaced (not fixed, out of scope): the shared leave fixture's balance is now exhausted
+
+While re-running the full integration suite to confirm no regressions,
+`leave-approvals.integration.spec.tsx`'s approve step started failing
+consistently — not from anything in this pass. Traced directly (real DB
+query, not guessed): the `frontend-e2e-employee` fixture's 2027 Annual
+Leave balance is now **0**, exhausted by years of accumulated approved
+requests from repeated local test runs across many past sessions (this
+fixture is intentionally NOT reset per-run — see the existing "Frontend
+auth fixtures are fixed/non-per-run" limitation already logged). Once
+balance hits zero, `LeaveApprovals`'s approve button (which calls
+`approveLeaveRequest(id)` with no `force` override) reliably gets a real
+409 from the server's insufficient-balance check, and the row never
+clears. This is real, but genuinely unrelated to this pass's changes
+(confirmed: the same file's OTHER assertion — the one this pass's
+department-context change actually touches — passes reliably on its
+own), and doesn't affect CI at all (CI's Postgres is fresh and empty on
+every run, never accumulates). Not fixed here — flagging for the founder:
+either the seed script should periodically top up/reset this fixture's
+balance, or `leave-approvals.integration.spec.tsx` should force-approve
+as this IS an admin-adjacent flow. Genuinely out of scope for a
+"company-wide overview" pass to take on unprompted.
+
+### What's verified
+
+Real backend, not mocked: `company-overview.integration.spec.tsx` — the
+same rigor as every other item in this build: a brand-new, fully
+isolated company created via the real Super Admin dashboard endpoints
+(not the shared, accumulated frontend-auth-fixtures company, specifically
+to keep count assertions deterministic), two real employees with real
+logins created through the real create-employee flow, one real clock-in,
+one real leave submission, then the real `CompanyOverview` component
+rendering the real totals, the real pending count, and the real
+per-employee today's-attendance status — all asserted against exact
+values, not approximations. `TeamList`/`LeaveApprovals` unit and
+locale-parity tests updated to match the new rendered department text;
+existing real-backend `leave-approvals.integration.spec.tsx` updated
+the same way and confirmed passing (independent of the unrelated balance
+issue above). Full regression check: backend 107 e2e + (unit suite
+unchanged, no backend code touched) tests, frontend 164 unit/component
+tests and the full integration suite (14 files) all pass except the one
+pre-existing, unrelated, already-explained flake. Real production `next
+build` of the new `/overview` route succeeds.
+
+---
+
 ## 2026-07-31 — Verification-pass item 1: employee account creation (the actual production blocker)
 
 Closes the single most consequential gap the verification pass found:

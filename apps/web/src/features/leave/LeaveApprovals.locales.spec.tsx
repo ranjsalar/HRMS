@@ -41,6 +41,7 @@ describe.each([
       if (p === "/leave-types") {
         return [{ id: "lt1", companyId: "c1", name: "Annual Leave", daysPerYear: 30, requiresApproval: true, paid: true, active: true }];
       }
+      if (p === "/departments") return [];
       if (p.startsWith("/leave-requests/preview")) return { workingDays: 3 };
       if (p.startsWith("/leave-balances?employeeId=")) return [];
       throw new Error(`unexpected ${p}`);
@@ -61,6 +62,7 @@ describe.each([
       if (p === "/leave-requests?status=pending") return [];
       if (p === "/employees") return [];
       if (p === "/leave-types") return [];
+      if (p === "/departments") return [];
       throw new Error(`unexpected ${p}`);
     });
     renderApprovals(locale);

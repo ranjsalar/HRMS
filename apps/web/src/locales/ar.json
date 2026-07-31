@@ -91,6 +91,7 @@
     "team": "الفريق",
     "orgChart": "الهيكل التنظيمي",
     "leaveApprovals": "موافقات الإجازات",
+    "overview": "نظرة عامة على الشركة",
     "superadmin": "المشرف العام"
   },
   "dashboard": {
@@ -222,6 +223,7 @@
     "empty": "لا يوجد أعضاء فريق لعرضهم.",
     "loadError": "تعذّر تحميل فريقك.",
     "correctAttendance": "تصحيح الحضور",
+    "noDepartment": "بدون قسم",
     "addEmployee": {
       "addButton": "إضافة موظف",
       "title": "إضافة موظف",
@@ -262,6 +264,20 @@
     "approving": "جارٍ الموافقة…",
     "reject": "الرفض",
     "rejecting": "جارٍ الرفض…"
+  },
+  "overview": {
+    "title": "نظرة عامة على الشركة",
+    "loadError": "تعذّر تحميل نظرة الشركة العامة.",
+    "totalEmployees": "إجمالي الموظفين",
+    "pendingLeaveRequests": "طلبات الإجازة المعلّقة",
+    "todayAttendance": {
+      "title": "حضور اليوم",
+      "clockedIn": "حاضر",
+      "clockedOut": "منصرف",
+      "absent": "لم يسجّل الحضور",
+      "clockInTime": "الحضور: {{time}}",
+      "clockOutTime": "الانصراف: {{time}}"
+    }
   },
   "orgChart": {
     "title": "الهيكل التنظيمي",

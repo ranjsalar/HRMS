@@ -16,11 +16,15 @@ import {
 } from "./leave-approvals-api";
 import type { LeaveRequestDto } from "./leave-requests-api";
 import { fetchTeam, type TeamMemberDto } from "@/features/team/team-api";
+import { fetchDepartments } from "@/features/org/org-api";
 
 export function LeaveApprovals() {
   const { t, dir } = useTranslation();
   const [requests, setRequests] = useState<LeaveRequestDto[] | null>(null);
   const [employeeNameById, setEmployeeNameById] = useState<Map<string, string>>(new Map());
+  const [employeeDepartmentNameById, setEmployeeDepartmentNameById] = useState<Map<string, string>>(
+    new Map(),
+  );
   const [leaveTypeById, setLeaveTypeById] = useState<Map<string, LeaveTypeDto>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -29,20 +33,30 @@ export function LeaveApprovals() {
     setLoading(true);
     setLoadError(false);
     try {
-      const [pending, team, types] = await Promise.all([
+      const [pending, team, types, departments] = await Promise.all([
         fetchPendingApprovals(),
         fetchTeam(),
         fetchActiveLeaveTypes(),
+        fetchDepartments(),
       ]);
       setRequests(pending);
       setEmployeeNameById(new Map(team.map((m: TeamMemberDto) => [m.id, m.fullName])));
       setLeaveTypeById(new Map(types.map((lt) => [lt.id, lt])));
+      const departmentNameById = new Map(departments.map((d) => [d.id, d.name]));
+      setEmployeeDepartmentNameById(
+        new Map(
+          team.map((m: TeamMemberDto) => [
+            m.id,
+            m.departmentId ? (departmentNameById.get(m.departmentId) ?? t("team.noDepartment")) : t("team.noDepartment"),
+          ]),
+        ),
+      );
     } catch {
       setLoadError(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -77,6 +91,7 @@ export function LeaveApprovals() {
               key={request.id}
               request={request}
               employeeName={employeeNameById.get(request.employeeId) ?? request.employeeId}
+              departmentName={employeeDepartmentNameById.get(request.employeeId) ?? null}
               leaveType={leaveTypeById.get(request.leaveTypeId) ?? null}
               onDecided={() => handleDecided(request.id)}
             />
@@ -92,11 +107,13 @@ export function LeaveApprovals() {
 function ApprovalRow({
   request,
   employeeName,
+  departmentName,
   leaveType,
   onDecided,
 }: {
   request: LeaveRequestDto;
   employeeName: string;
+  departmentName: string | null;
   leaveType: LeaveTypeDto | null;
   onDecided: () => void;
 }) {
@@ -168,7 +185,8 @@ function ApprovalRow({
     >
       <div className="flex flex-col gap-0.5">
         <span className="font-body text-sm font-medium text-neutral-900">
-          {employeeName} — {leaveType?.name ?? request.leaveTypeId}
+          {employeeName}
+          {departmentName ? ` · ${departmentName}` : ""} — {leaveType?.name ?? request.leaveTypeId}
         </span>
         <span className="font-body text-xs text-neutral-600">
           {t("leave.history.dateRange", {

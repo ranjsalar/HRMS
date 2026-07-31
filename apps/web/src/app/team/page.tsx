@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppNav } from "@/components/AppNav";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -8,6 +8,7 @@ import { AddEmployeeForm } from "@/features/team/AddEmployeeForm";
 import { AttendanceCorrectionForm } from "@/features/team/AttendanceCorrectionForm";
 import { TeamList } from "@/features/team/TeamList";
 import type { CreateEmployeeResult, TeamMemberDto } from "@/features/team/team-api";
+import { fetchDepartments, type DepartmentDto } from "@/features/org/org-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/lib/auth-context";
 import { useTranslation } from "@/lib/locale-context";
@@ -20,6 +21,12 @@ export default function TeamPage() {
   const [addingEmployee, setAddingEmployee] = useState(false);
   const [justCreated, setJustCreated] = useState<CreateEmployeeResult | null>(null);
   const [teamKey, setTeamKey] = useState(0); // bumped to force TeamList to re-fetch after a create
+  const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+
+  useEffect(() => {
+    if (!ready) return;
+    void fetchDepartments().then(setDepartments).catch(() => setDepartments([]));
+  }, [ready]);
 
   if (!ready) {
     return (
@@ -76,6 +83,7 @@ export default function TeamPage() {
 
       <TeamList
         key={teamKey}
+        departments={departments}
         renderRowAction={(member: TeamMemberDto) =>
           correctingId === member.id ? (
             <AttendanceCorrectionForm
