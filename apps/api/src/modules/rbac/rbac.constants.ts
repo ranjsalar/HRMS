@@ -15,6 +15,13 @@ export const RBAC_MODULES = [
   "audit",
   "rbac",
   "projects", // Project/Task/ProjectMember/TaskTimeEntry — Projects module step 2. See Projects-Module-Plan.md §3.
+  // Customer/CustomerContact/Lead/Deal/SalesOrder/SalesOrderLine — Sales
+  // module step 2. One module for all six, same reasoning as "projects"
+  // covering Project/Task/TaskTimeEntry: nothing here is reachable from a
+  // self-scoped grant in a way that could be misread as authority over
+  // something else, so the leave/leave_types split has no analogue.
+  // See Sales-CRM-Module-Plan.md §3.
+  "sales",
 ] as const;
 
 export const RBAC_ACTIONS = ["view", "create", "edit", "delete", "approve"] as const;

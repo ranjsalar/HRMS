@@ -176,4 +176,72 @@ describe("PermissionCheckService", () => {
 
     expect(result).toBe("self");
   });
+
+  // Sales/CRM module (step 2 of the Sales build). As with `projects`, the
+  // check logic is generic over module name — these prove the new module
+  // name flows through correctly, and pin down the two grant decisions
+  // that are specific to this module.
+  it("manager with a sales own_department grant is allowed at that scope", async () => {
+    const { scoped } = buildScopedRunner([{ userId: null, scope: "own_department" }]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "manager",
+      companyId,
+      userId,
+      module: "sales",
+      action: "view",
+    });
+
+    expect(result).toBe("own_department");
+  });
+
+  it("manager with no sales:create grant is denied (admin-only by default, opt-in per company)", async () => {
+    const { scoped } = buildScopedRunner([]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "manager",
+      companyId,
+      userId,
+      module: "sales",
+      action: "create",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  // The decision that makes the company-wide customer-read design safe:
+  // a plain employee has NO sales access at all until a company
+  // explicitly opts them in. Distinct from `projects`, where every
+  // employee does get self-scoped grants by default.
+  it("employee with no sales grant at all is denied — employees get nothing for sales by default", async () => {
+    const { scoped } = buildScopedRunner([]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "employee",
+      companyId,
+      userId,
+      module: "sales",
+      action: "view",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("employee explicitly opted in to sales at self scope is allowed — this opt-in IS the 'sales rep role', no new RoleName needed", async () => {
+    const { scoped } = buildScopedRunner([{ userId: null, scope: "self" }]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "employee",
+      companyId,
+      userId,
+      module: "sales",
+      action: "edit",
+    });
+
+    expect(result).toBe("self");
+  });
 });

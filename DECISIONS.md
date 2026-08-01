@@ -7,6 +7,31 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Sales/CRM module, step 2: RBAC wiring (`sales` added to `RBAC_MODULES`)
+
+Second of the module's eight build steps. `"sales"` added to `RBAC_MODULES` (`rbac.constants.ts`) and the default grants from `Sales-CRM-Module-Plan.md` §3 added to `DEFAULT_ROLE_PERMISSIONS`. One RBAC module covering all six entities, same reasoning as `projects` covering Project/Task/TaskTimeEntry. `CreateRolePermissionDto` validates against `RBAC_MODULES` directly, so it picked this up with no change; confirmed no frontend file hardcodes a module list either.
+
+**Verified against the actual generated matrix, not just the source edit** — `company_admin` gets all five actions at `all` automatically via `fullAccess()`, `manager` gets exactly `view` + `edit` at `own_department`, and `employee` gets **zero** sales grants.
+
+### `employee` gets nothing — an explicit decision, not an omission
+
+This is the thing that makes the company-wide customer-read design safe. Unlike Projects, where every employee genuinely has tasks, most employees at a company are not in sales, and granting the entire workforce sight of the customer list by default would be wrong. A company turns a specific employee into a sales rep by granting `sales:view`/`sales:create`/`sales:edit` at `self` scope through the existing `/rbac/permissions` UI. **That opt-in is the "sales rep role"** — it's why no `sales_rep` `RoleName` was added (step 1's entry covers the role-explosion reasoning). Both halves are now pinned by tests: an employee with no grant is denied, and an employee explicitly opted in at `self` scope is allowed.
+
+### One mechanism decision the plan's §3 table didn't pin down, resolved fail-closed
+
+The plan's §3 table specifies per-entity scopes for the same role — manager gets `all` for viewing `Customer` but `own_department` for viewing `Deal`. **An RBAC grant carries exactly one scope per role × module × action, so that cannot be expressed at the grant level.** The plan described the intended *behavior*; it didn't say which mechanism produces it. Two options:
+
+- Grant the **wide** scope (`all`) and have the Deal/Lead/SalesOrder services narrow down.
+- Grant the **narrow** scope (`own_department`) and have the Customer/CustomerContact service widen up.
+
+**Chose the narrow grant + deliberate widening**, because the failure modes are not symmetric: if a future Sales entity is added and someone forgets to give it special handling, the narrow-grant design defaults it to `own_department` (fail-closed), while the wide-grant design would default it to company-wide (fail-open). The confirmed *behavior* from §3 is preserved exactly either way — the customer list is still company-wide readable; that widening now happens in one explicit, documented, testable place in `CustomersService` (step 3) rather than being implicit in a broad grant.
+
+This also isn't a new pattern: `TasksService` and `TaskTimeEntriesService` already interpret one shared `projects` scope value differently per entity, and the Projects step-7 audit confirmed that deliberate asymmetry as correct.
+
+**Retroactive-seeding caveat, same as `org`/`leave_types`/`projects`:** these rows only apply to companies provisioned after this change. Already-seeded companies need `pnpm db:seed` (or equivalent) re-run to pick up `sales:*`.
+
+No `sales` endpoints exist yet (steps 3–6), so there is nothing to prove over real HTTP at this step — the RBAC-boundary e2e proof is step 3's job, exactly as it was for Projects.
+
 ## 2026-08-01 — Sales/CRM module, step 1: schema + migration + RLS (six new tables)
 
 First of the module's eight confirmed build steps (see `Sales-CRM-Module-Plan.md`). Six models — `Customer`, `CustomerContact`, `Lead`, `Deal`, `SalesOrder`, `SalesOrderLine` — and four enums (`CustomerType`, `LeadStatus`, `DealStage`, `SalesOrderStatus`), exactly as reviewed and confirmed. Same non-nullable-`companyId` RLS form as `Employee`/`Project`/`Task`, not the nullable-`companyId` OR/`WITH CHECK` form `Holiday`/`PayrollRegionRule` need.

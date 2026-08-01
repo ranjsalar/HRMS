@@ -58,6 +58,24 @@ export const DEFAULT_ROLE_PERMISSIONS: DefaultPermissionTemplate[] = [
   // Projects-Module-Plan.md §3.
   { role: "manager", module: "projects", action: "view", scope: "own_department" },
   { role: "manager", module: "projects", action: "edit", scope: "own_department" },
+  // Sales: a manager sees and edits records owned by employees in the
+  // department(s) they manage. sales:create / sales:delete are
+  // deliberately NOT default grants — same admin-only-by-default,
+  // opt-in-per-company precedent as employees:create / projects:create.
+  //
+  // Granted at own_department, NOT "all", even though the confirmed
+  // product decision is that the CUSTOMER list is readable company-wide
+  // (Sales-CRM-Module-Plan.md §3). An RBAC grant carries exactly one
+  // scope per role×module×action, so it cannot say "all for Customer,
+  // own_department for Deal" — that per-entity difference is resolved in
+  // the service layer, the same way TasksService and TaskTimeEntriesService
+  // already interpret one `projects` scope differently. Granting the
+  // NARROW scope and widening deliberately for Customer/CustomerContact
+  // reads is the fail-closed direction: a Sales entity added later
+  // without special handling defaults to own_department, not
+  // company-wide. See DECISIONS.md.
+  { role: "manager", module: "sales", action: "view", scope: "own_department" },
+  { role: "manager", module: "sales", action: "edit", scope: "own_department" },
 
   // employee: self-service only.
   { role: "employee", module: "employees", action: "view", scope: "self" },
@@ -83,6 +101,16 @@ export const DEFAULT_ROLE_PERMISSIONS: DefaultPermissionTemplate[] = [
   // narrows employees:edit today. See Projects-Module-Plan.md §3.
   { role: "employee", module: "projects", action: "view", scope: "self" },
   { role: "employee", module: "projects", action: "edit", scope: "self" },
+  // NOTE: `employee` deliberately gets NO "sales" grant of any kind here.
+  // This is an explicit decision, not an omission — it's the thing that
+  // makes the company-wide customer-read decision (Sales-CRM-Module-Plan.md
+  // §3) safe. Unlike Projects, where every employee genuinely has tasks,
+  // most employees at a company are not in sales, and granting the whole
+  // workforce sight of the customer list by default would be wrong.
+  // A company turns a specific employee into a sales rep by granting
+  // sales:view / sales:create / sales:edit at `self` scope through the
+  // existing /rbac/permissions UI. That opt-in IS the "sales rep role" —
+  // see DECISIONS.md on why no `sales_rep` RoleName was added.
 ];
 
 export function buildRolePermissionRows(companyId: string): Prisma.RolePermissionCreateManyInput[] {
