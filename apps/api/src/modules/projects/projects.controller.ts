@@ -49,13 +49,14 @@ export class ProjectsController {
   @Post()
   create(
     @CurrentUser() user: AccessTokenPayload,
+    @CurrentPermissionScope() scope: PermissionScope,
     @Body() dto: CreateProjectDto,
     @ClientIp() ipAddress: string,
   ) {
     if (!user.companyId) {
       throw new NotFoundException("This endpoint requires a company-scoped session");
     }
-    return this.projectsService.create(user.companyId, dto, user.sub, {
+    return this.projectsService.create(user.companyId, dto, user.sub, scope, {
       userId: user.sub,
       ipAddress,
     });

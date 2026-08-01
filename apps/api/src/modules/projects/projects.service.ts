@@ -69,8 +69,21 @@ export class ProjectsService {
     companyId: string,
     dto: CreateProjectDto,
     requestingUserId: string,
+    scope: PermissionScope,
     actor: RequestActor,
   ): Promise<Project> {
+    // Belt-and-suspenders, same reasoning as update()/archive() rejecting
+    // self scope: nothing currently grants an employee projects:create at
+    // any scope, but RBAC grants are configurable per-company (see
+    // /rbac/permissions) and nothing stops a future misconfiguration from
+    // creating a nonsensical "employee, self" row. The plan is explicit
+    // employees never create projects — enforce that here too, not just
+    // by relying on the default matrix never granting it. See
+    // DECISIONS.md.
+    if (scope === "self") {
+      throw new ForbiddenException("Employees cannot create projects");
+    }
+
     const project = await this.tx().project.create({
       data: {
         companyId,
