@@ -125,4 +125,55 @@ describe("PermissionCheckService", () => {
     expect(result).toBeNull();
     expect(run).not.toHaveBeenCalled();
   });
+
+  // Projects module (step 2 of the Projects/Task Management build) — added
+  // to RBAC_MODULES alongside the pre-existing ones above. The check logic
+  // itself is fully generic over module name, so these prove the new module
+  // name flows through it correctly rather than testing new behavior.
+  it("manager with a projects own_department grant is allowed at that scope", async () => {
+    const { scoped } = buildScopedRunner([{ userId: null, scope: "own_department" }]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "manager",
+      companyId,
+      userId,
+      module: "projects",
+      action: "view",
+    });
+
+    expect(result).toBe("own_department");
+  });
+
+  it("manager with no projects:create grant is denied (admin-only by default, opt-in per company)", async () => {
+    // No row at all for this module/action — mirrors how DEFAULT_ROLE_PERMISSIONS
+    // seeds view/edit but deliberately no create row for manager on "projects".
+    const { scoped } = buildScopedRunner([]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "manager",
+      companyId,
+      userId,
+      module: "projects",
+      action: "create",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("employee with a projects self grant is allowed at that scope", async () => {
+    const { scoped } = buildScopedRunner([{ userId: null, scope: "self" }]);
+    const service = new PermissionCheckService(scoped);
+
+    const result = await service.check({
+      role: "employee",
+      companyId,
+      userId,
+      module: "projects",
+      action: "edit",
+    });
+
+    expect(result).toBe("self");
+  });
 });

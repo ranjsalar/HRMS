@@ -51,6 +51,13 @@ export const DEFAULT_ROLE_PERMISSIONS: DefaultPermissionTemplate[] = [
   { role: "manager", module: "leave", action: "approve", scope: "own_department" },
   { role: "manager", module: "documents", action: "view", scope: "own_department" },
   { role: "manager", module: "notifications", action: "view", scope: "self" },
+  // projects:create is deliberately NOT granted here — admin-only by
+  // default, same precedent as employees:create. A company can opt a
+  // manager into project/task creation at own_department scope via
+  // /rbac/permissions, but it's never a default grant. See
+  // Projects-Module-Plan.md §3.
+  { role: "manager", module: "projects", action: "view", scope: "own_department" },
+  { role: "manager", module: "projects", action: "edit", scope: "own_department" },
 
   // employee: self-service only.
   { role: "employee", module: "employees", action: "view", scope: "self" },
@@ -69,6 +76,13 @@ export const DEFAULT_ROLE_PERMISSIONS: DefaultPermissionTemplate[] = [
   { role: "employee", module: "documents", action: "create", scope: "self" },
   { role: "employee", module: "payroll", action: "view", scope: "self" },
   { role: "employee", module: "notifications", action: "view", scope: "self" },
+  // Employees never create projects/tasks. "edit" at self scope covers only
+  // updating the status of a task they're assigned to and logging their own
+  // TaskTimeEntry rows — the endpoint layer (step 4/5) is what actually
+  // narrows this to that allow-list, the same way UpdateOwnEmployeeDto
+  // narrows employees:edit today. See Projects-Module-Plan.md §3.
+  { role: "employee", module: "projects", action: "view", scope: "self" },
+  { role: "employee", module: "projects", action: "edit", scope: "self" },
 ];
 
 export function buildRolePermissionRows(companyId: string): Prisma.RolePermissionCreateManyInput[] {

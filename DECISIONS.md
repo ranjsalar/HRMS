@@ -7,6 +7,76 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Projects module, step 2: RBAC wiring (`projects` added to `RBAC_MODULES`)
+
+Second of the module's seven confirmed build steps (see
+`Projects-Module-Plan.md` §6). Added `"projects"` to `RBAC_MODULES`
+(`rbac.constants.ts`) and the manager/employee default grants from the
+plan's §3 to `DEFAULT_ROLE_PERMISSIONS` (`default-role-permissions.ts`):
+
+- `company_admin` needs no explicit rows — `fullAccess()` already grants
+  every module (including this new one) `all` scope for every action,
+  automatically, by iterating `RBAC_MODULES`.
+- `manager`: `projects:view` and `projects:edit` at `own_department` scope
+  by default. **`projects:create` is deliberately NOT a default grant** —
+  same precedent as `employees:create` — a company can opt a manager into
+  it via `/rbac/permissions`, but it never ships as a default.
+- `employee`: `projects:view` and `projects:edit` at `self` scope.
+  `projects:edit` here is intentionally broad at the RBAC-scope level (RBAC
+  only encodes module/action/scope, not field-level allow-lists) — the
+  actual narrowing to "status + own time entries only, nothing else" is an
+  endpoint-layer concern for steps 4/5, the same way `employees:edit` at
+  self scope is only actually narrow because `UpdateOwnEmployeeDto` limits
+  the fields, not because RBAC itself does.
+
+Extended `permission-check.service.spec.ts` with three `projects`-module
+cases (manager `own_department` view, manager denied on `create`, employee
+`self` edit). `PermissionCheckService` itself is fully generic over module
+name — these tests don't exercise new logic, they prove the new module name
+flows through the existing generic check correctly, and stand as
+regression coverage once Project/Task endpoints start relying on it in
+steps 3–5.
+
+**Same retroactive-seeding caveat as `"org"`/`"leave_types"`:** these new
+default rows only apply to companies provisioned *after* this change via
+`buildRolePermissionRows`. Companies already seeded (the two demo
+companies, any existing pilot company) do not get `projects:*` rows
+automatically — `pnpm db:seed` (or equivalent) needs re-running against
+them to pick up the new defaults.
+
+No `Project`/`Task` CRUD endpoints exist yet (steps 3–4), so there is
+nothing to e2e-test this against over real HTTP yet — that RBAC-boundary
+proof (admin sees all, manager sees only projects with a member from their
+department, employee sees only projects they're a member of) is explicitly
+step 3's job per the plan, not this step's.
+
+## 2026-08-01 — Projects module, step 1: schema + migration + RLS
+
+First of the module's seven confirmed build steps. Added `Project`,
+`ProjectMember`, `Task`, `TaskTimeEntry` (plus `ProjectStatus`/`TaskStatus`
+enums) to the schema, exactly matching `Projects-Module-Plan.md` §5 as
+confirmed — same non-nullable-`companyId` RLS shape as `Employee`/
+`Department`/`LeaveRequest` (not the nullable-`companyId` OR/WITH-CHECK
+form `Holiday`/`PayrollRegionRule` need, since none of these four tables
+have a system-wide-default use case).
+
+RLS isolation proven, not assumed: extended `verify-rls.ts` with 6 new
+checks covering both `Project` and `Task` — fail-closed with no tenant
+scope set, Company A sees only its own rows, an explicit cross-tenant query
+for Company B's tasks while scoped to A returns zero rows, Company B
+scoping is symmetric, and the BYPASSRLS superadmin connection sees both.
+Since no seed fixtures exist yet for this module, the check creates
+throwaway `Project`/`Task` rows via the superadmin (BYPASSRLS) connection
+and deletes them in a `finally` block, rather than adding permanent seed
+data for a module whose CRUD endpoints don't exist yet.
+
+**Caught by real CI, not local checks:** the first push (`113b18f`) passed
+`tsc --noEmit` and the full local test suite but failed CI's separate
+`lint` step — a prettier formatting rule the local `tsc` run doesn't
+enforce. Fixed and pushed as a follow-up commit (`5eac8b5`); confirms the
+standing practice of always polling the real GitHub Actions run rather than
+trusting local checks alone before calling a step closed.
+
 ## 2026-08-01 — Notifications expansion, items 1–2: leave decision + payslip ready emails (item 3 flagged, not started)
 
 Closes a real gap against the original v1 plan: module 8 listed "leave

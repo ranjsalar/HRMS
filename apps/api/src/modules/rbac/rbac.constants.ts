@@ -14,6 +14,7 @@ export const RBAC_MODULES = [
   "notifications",
   "audit",
   "rbac",
+  "projects", // Project/Task/ProjectMember/TaskTimeEntry — Projects module step 2. See Projects-Module-Plan.md §3.
 ] as const;
 
 export const RBAC_ACTIONS = ["view", "create", "edit", "delete", "approve"] as const;
