@@ -319,6 +319,33 @@
       "membersTitle": "Members",
       "noMembers": "No members yet.",
       "loadError": "Couldn't load this project."
+    },
+    "create": {
+      "addButton": "New project",
+      "title": "New project",
+      "name": "Name",
+      "description": "Description",
+      "submit": "Create project",
+      "submitting": "Creating…",
+      "cancel": "Cancel"
+    },
+    "edit": {
+      "editButton": "Edit",
+      "title": "Edit project",
+      "status": "Status",
+      "submit": "Save changes",
+      "submitting": "Saving…"
+    },
+    "archive": {
+      "button": "Archive",
+      "confirmPrompt": "Archive this project?",
+      "confirmButton": "Yes, archive"
+    },
+    "members": {
+      "addLabel": "Add a member",
+      "addPlaceholder": "Choose an employee",
+      "addButton": "Add",
+      "removeButton": "Remove"
     }
   }
 }

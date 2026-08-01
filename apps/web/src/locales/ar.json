@@ -319,6 +319,33 @@
       "membersTitle": "الأعضاء",
       "noMembers": "لا يوجد أعضاء بعد.",
       "loadError": "تعذّر تحميل هذا المشروع."
+    },
+    "create": {
+      "addButton": "مشروع جديد",
+      "title": "مشروع جديد",
+      "name": "الاسم",
+      "description": "الوصف",
+      "submit": "إنشاء المشروع",
+      "submitting": "جارٍ الإنشاء…",
+      "cancel": "إلغاء"
+    },
+    "edit": {
+      "editButton": "تعديل",
+      "title": "تعديل المشروع",
+      "status": "الحالة",
+      "submit": "حفظ التغييرات",
+      "submitting": "جارٍ الحفظ…"
+    },
+    "archive": {
+      "button": "أرشفة",
+      "confirmPrompt": "هل تريد أرشفة هذا المشروع؟",
+      "confirmButton": "نعم، أرشفة"
+    },
+    "members": {
+      "addLabel": "إضافة عضو",
+      "addPlaceholder": "اختر موظفًا",
+      "addButton": "إضافة",
+      "removeButton": "إزالة"
     }
   }
 }

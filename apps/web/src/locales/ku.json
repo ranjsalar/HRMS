@@ -319,6 +319,33 @@
       "membersTitle": "ئەندامان",
       "noMembers": "هێشتا ئەندامی نییە.",
       "loadError": "نەمانتوانی ئەم پڕۆژەیە بار بکەین."
+    },
+    "create": {
+      "addButton": "پڕۆژەی نوێ",
+      "title": "پڕۆژەی نوێ",
+      "name": "ناو",
+      "description": "وەسف",
+      "submit": "دروستکردنی پڕۆژە",
+      "submitting": "دروستکردن...",
+      "cancel": "هەڵوەشاندنەوە"
+    },
+    "edit": {
+      "editButton": "دەستکاریکردن",
+      "title": "دەستکاریکردنی پڕۆژە",
+      "status": "دۆخ",
+      "submit": "پاشەکەوتکردنی گۆڕانکاریەکان",
+      "submitting": "پاشەکەوتکردن..."
+    },
+    "archive": {
+      "button": "ئەرشیفکردن",
+      "confirmPrompt": "ئایا دەتەوێت ئەم پڕۆژەیە ئەرشیف بکەیت؟",
+      "confirmButton": "بەڵێ، ئەرشیفی بکە"
+    },
+    "members": {
+      "addLabel": "زیادکردنی ئەندام",
+      "addPlaceholder": "کارمەندێک هەڵبژێرە",
+      "addButton": "زیادکردن",
+      "removeButton": "لابردن"
     }
   }
 }
