@@ -347,5 +347,19 @@
       "addButton": "Add",
       "removeButton": "Remove"
     }
+  },
+  "tasks": {
+    "title": "Tasks",
+    "empty": "No tasks yet.",
+    "loadError": "Couldn't load tasks for this project.",
+    "unassigned": "Unassigned",
+    "unknownAssignee": "Former team member",
+    "status": {
+      "label": "Status",
+      "todo": "To do",
+      "in_progress": "In progress",
+      "blocked": "Blocked",
+      "done": "Done"
+    }
   }
 }

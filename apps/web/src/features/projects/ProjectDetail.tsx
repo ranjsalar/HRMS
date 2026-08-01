@@ -18,6 +18,7 @@ import {
   removeProjectMember,
   type ProjectDetailDto,
 } from "./projects-api";
+import { TaskList } from "./TaskList";
 
 export function ProjectDetail({
   projectId,
@@ -165,6 +166,8 @@ export function ProjectDetail({
       )}
 
       <ProjectMembers project={project} canManage={canManage} onChanged={() => void load()} />
+
+      <TaskList projectId={project.id} />
     </div>
   );
 }

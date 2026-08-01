@@ -347,5 +347,19 @@
       "addButton": "إضافة",
       "removeButton": "إزالة"
     }
+  },
+  "tasks": {
+    "title": "المهام",
+    "empty": "لا توجد مهام بعد.",
+    "loadError": "تعذّر تحميل مهام هذا المشروع.",
+    "unassigned": "غير مسندة",
+    "unknownAssignee": "عضو سابق في الفريق",
+    "status": {
+      "label": "الحالة",
+      "todo": "قيد الانتظار",
+      "in_progress": "قيد التنفيذ",
+      "blocked": "متوقفة",
+      "done": "منجزة"
+    }
   }
 }

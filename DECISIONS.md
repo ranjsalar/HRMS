@@ -7,6 +7,14 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Projects module, step 6.3: task list + the employee status-only control
+
+`tasks-api.ts` (`fetchTasks`, `updateTaskStatus`), `TaskList` component, wired into `ProjectDetail` below the members section. `GET /tasks` has no `projectId` query param (matches `/projects` — no filter params anywhere in this module), so `TaskList` fetches every task within the caller's scope and filters client-side by `task.projectId`, same "render exactly what scope resolution returned, narrowed by a real field" reasoning used everywhere else in this app.
+
+**The interactive control appears only for the real assignee, exactly mirroring the backend's own asymmetric scope from step 4.** `TaskList` resolves the caller's own `employeeId` via the existing `fetchMyProfile()` (`/employees/me`, already built for the profile self-service page — reused, not duplicated) and compares it to each task's `assigneeId`. Only a match renders the `Status` `<Select>`, wired to the dedicated `PATCH /tasks/:id/status` route; everyone else — including admin/manager viewing the same list — sees status as plain text. This is a deliberate scope split, not a missing feature: full task editing (title/description/reassignment, available to admin/manager via the general route) is step 6.4's own surface, not this one. Status changes apply immediately on selection (no separate save step) — matches this being a lightweight, single-field action, not a multi-field form.
+
+**RBAC boundary proof (`tasks.integration.spec.tsx`, 3 tests), all against real seeded data** (a real task created directly via the API in `beforeAll`, since task creation itself is step 6.4's UI, not built yet): a non-assignee viewer sees the task and its real assignee's name, status as text, no control; the real assignee gets the control and a real status change genuinely lands server-side (re-verified via a direct API call after the UI interaction, not just trusting the optimistic re-render); a second independent render re-confirms the control still never appears for a non-assignee after the status has actually changed.
+
 ## 2026-08-01 — Projects module, step 6.2: project create/edit/archive + member management (admin/manager-only)
 
 `CreateProjectForm` (list page), `EditProjectForm` + archive control + member add/remove (folded directly into `ProjectDetail`, not split into further sub-components — this view has exactly one consumer, unlike `TeamList`'s render-prop shape which exists because it's genuinely reused).
