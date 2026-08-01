@@ -7,6 +7,19 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Projects module, step 7: verification pass — RLS extended with TaskTimeEntry + a genuine write-under-RLS proof
+
+Full audit run: RBAC boundaries re-confirmed end-to-end across every existing backend/frontend e2e suite for Project/Task/TaskTimeEntry (all still passing, all still proving own_department-via-membership, Task's view/write asymmetry, and the Task-vs-TaskTimeEntry scoping gap). Translations re-verified: `checkLocaleParity` passes, a direct value-diff across every key added this module found zero leaked English into ar/ku, and RTL was proven with a real render (temporary, audit-only spec, deleted afterward) rather than assumed from the shared `dir`/`t()` pattern already working elsewhere. All 10 mutating actions across the module (`create`/`update`/`archive`/`add_member`/`remove_member` on Project; `create`/`update`/`update_status`/`delete` on Task; `log_time` on TaskTimeEntry) confirmed to genuinely write attributed `AuditLog` rows via a direct DB read, not just by reading the code that calls `audit.record()`.
+
+**`verify-rls.ts` extended in two real ways, both committed here:**
+
+1. **`TaskTimeEntry` coverage** — missing until now, since it had no endpoints when step 1's original extension ran. Same shape as the existing Project/Task checks: fail-closed with no scope, Company A sees only its own, an explicit cross-tenant query for Company B's entries returns zero while scoped to A, symmetric for B, BYPASSRLS superadmin sees both.
+2. **A genuine write-under-RLS proof — the first of its kind in this file.** Every prior RLS check (including the ones from step 1) only ever `SELECT`s. This attempts an `UPDATE` targeting Company B's project while scoped to Company A, confirms zero rows are affected, and re-reads the row via the BYPASSRLS connection afterward to confirm it's genuinely unchanged — not just "the query returned nothing," but "the write never happened." This is what the migration's simple `USING (...)` RLS form (no separate `WITH CHECK`) is supposed to guarantee for INSERT/UPDATE by Postgres's own default behavior; this proves it rather than trusting that default.
+
+**The single strongest proof in this pass — and arguably in the whole build so far:** a real second company was created with a user granted an explicit, unrestricted `all`-scope `projects:view`/`projects:delete` permission (not the default matrix — a deliberately maximal grant, to remove the permission layer as a variable). That user then attempted to `GET`/`DELETE` Company A's real project and task by their real, guessed IDs. Result: an empty list on `GET /projects`, a `404` on every direct attempt. Proves RLS confines the query to the caller's own tenant *regardless of how much permission they hold within it* — not "no permission, so blocked," but "maximal permission, still blocked, because the row itself doesn't exist from this connection's point of view." This is a meaningfully stronger claim than every prior cross-tenant proof in this build, which relied on permission checks not being granted rather than isolating RLS as the sole remaining variable.
+
+**A real bug found, not fixed in this step** (see the next entry): `DELETE /tasks/:id` throws an unhandled `500` when the task has logged `TaskTimeEntry` rows (`ON DELETE RESTRICT`). Flagged for the founder's decision rather than guessed at.
+
 ## 2026-08-01 — Projects module, step 6.5: time logging UI, and the own_department caveat copy — closes step 6 (frontend) entirely
 
 `task-time-entries-api.ts` (`fetchTimeEntries`/`logTimeEntry`), `TaskTimeEntries` component, wired into `TaskList` as a per-task expandable "Time entries" panel (a toggle button per row, not always-open — keeps the task list itself from growing unbounded as entries accumulate).

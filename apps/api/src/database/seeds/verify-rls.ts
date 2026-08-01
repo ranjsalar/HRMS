@@ -207,6 +207,119 @@ async function main(): Promise<void> {
         seenProjectCompanyIds.has(companyA.id) && seenProjectCompanyIds.has(companyB.id),
         `saw company ids: ${[...seenProjectCompanyIds].join(", ")}`,
       );
+
+      // ── 8b. WRITE under RLS, not just SELECT — a genuinely different
+      // proof than everything above. Every check so far reads; this
+      // attempts to UPDATE Company B's project while scoped to Company
+      // A, confirming RLS blocks cross-tenant writes too (the migration's
+      // simple `USING (...)` form, with no separate `WITH CHECK`, has
+      // Postgres reuse the same expression for INSERT/UPDATE — this is
+      // what actually proves that, not just an assumption about how
+      // Postgres defaults work). See DECISIONS.md, step 7.
+      const crossTenantUpdateAttempt = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.project.updateMany({
+          where: { id: projectB.id },
+          data: { name: "SHOULD NEVER APPLY — cross-tenant write attempt" },
+        });
+      });
+      check(
+        "UPDATE targeting Company B's project while scoped to Company A affects zero rows",
+        crossTenantUpdateAttempt.count === 0,
+        `updated ${crossTenantUpdateAttempt.count} row(s)`,
+      );
+      const projectBUnchanged = await superadminPrisma.project.findUniqueOrThrow({
+        where: { id: projectB.id },
+      });
+      check(
+        "Company B's project name is genuinely unchanged after the blocked cross-tenant update",
+        projectBUnchanged.name === "RLS check project B",
+        `name is now "${projectBUnchanged.name}"`,
+      );
+
+      // ── 8c. TaskTimeEntry — a real Employee row from each company is
+      // needed (the FK is real, not nullable), reused from whichever
+      // employee `pnpm db:seed` already created rather than creating new
+      // throwaway ones.
+      const employeeA = await superadminPrisma.employee.findFirstOrThrow({
+        where: { companyId: companyA.id },
+      });
+      const employeeB = await superadminPrisma.employee.findFirstOrThrow({
+        where: { companyId: companyB.id },
+      });
+      const entryA = await superadminPrisma.taskTimeEntry.create({
+        data: {
+          companyId: companyA.id,
+          taskId: taskA.id,
+          employeeId: employeeA.id,
+          date: new Date(),
+          hours: "1.5",
+        },
+      });
+      const entryB = await superadminPrisma.taskTimeEntry.create({
+        data: {
+          companyId: companyB.id,
+          taskId: taskB.id,
+          employeeId: employeeB.id,
+          date: new Date(),
+          hours: "2.5",
+        },
+      });
+
+      try {
+        const entriesForA = await appPrisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+          return tx.taskTimeEntry.findMany();
+        });
+        check(
+          "hrms_app scoped to Company A sees only Company A's time entries",
+          entriesForA.length > 0 && entriesForA.every((e) => e.companyId === companyA.id),
+          `got ${entriesForA.length} row(s), companyIds: ${[...new Set(entriesForA.map((e) => e.companyId))].join(", ")}`,
+        );
+
+        const directEntryAttempt = await appPrisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+          return tx.taskTimeEntry.findMany({ where: { companyId: companyB.id } });
+        });
+        check(
+          "Explicit query for Company B's time entries while scoped to Company A returns zero rows",
+          directEntryAttempt.length === 0,
+          `got ${directEntryAttempt.length} row(s)`,
+        );
+
+        const entriesForB = await appPrisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyB.id}'`);
+          return tx.taskTimeEntry.findMany();
+        });
+        check(
+          "hrms_app scoped to Company B sees only Company B's time entries",
+          entriesForB.length > 0 && entriesForB.every((e) => e.companyId === companyB.id),
+          `got ${entriesForB.length} row(s)`,
+        );
+
+        const noScopeEntries = await appPrisma.$transaction(async (tx) => {
+          return tx.taskTimeEntry.findMany();
+        });
+        check(
+          "hrms_app with no app.current_company_id set sees zero time entries (fail-closed default)",
+          noScopeEntries.length === 0,
+          `got ${noScopeEntries.length} row(s)`,
+        );
+
+        const allEntriesSuperadmin = await superadminPrisma.taskTimeEntry.findMany({
+          where: { id: { in: [entryA.id, entryB.id] } },
+        });
+        const seenEntryCompanyIds = new Set(allEntriesSuperadmin.map((e) => e.companyId));
+        check(
+          "hrms_superadmin (BYPASSRLS) sees time entries from both companies, no SET LOCAL needed",
+          seenEntryCompanyIds.has(companyA.id) && seenEntryCompanyIds.has(companyB.id),
+          `saw company ids: ${[...seenEntryCompanyIds].join(", ")}`,
+        );
+      } finally {
+        await superadminPrisma.taskTimeEntry.deleteMany({
+          where: { id: { in: [entryA.id, entryB.id] } },
+        });
+      }
     } finally {
       await superadminPrisma.task.deleteMany({ where: { id: { in: [taskA.id, taskB.id] } } });
       await superadminPrisma.project.deleteMany({
