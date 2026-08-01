@@ -7,6 +7,12 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — UX consideration flagged for step 6: the Task-vs-TaskTimeEntry own_department gap needs plain-language explanation in the UI
+
+Founder review of step 5 confirmed the deliberate scoping distinction (Task visibility = "what's happening on this project," project-membership-based; TaskTimeEntry visibility = "what is this specific person doing," department-based — consistent with how Attendance already works) is correct, not a bug. But flagged, correctly: a manager seeing a task with zero logged time on it, with no explanation, will read as broken to a real user even though the backend is behaving exactly as designed. Not a backend fix — this is real UX/copy work.
+
+**Action for step 6 (frontend):** the task detail/time-log section needs plain-language help text (a tooltip, an inline note, or an empty state message) for the case "you can see this task, but the time logged on it may not all be visible to you" — visible to `company_admin`/`manager` roles specifically, since `all`/`self` scope never hits this gap (only `own_department` can see a task without seeing all its time). Needs a real copy pass in en/ar/ku, not just an English placeholder, matching this project's translation-completeness standard for anything shipped to real company staff (unlike the superadmin dashboard, which is deliberately English-only).
+
 ## 2026-08-01 — Projects module, step 5: TaskTimeEntry log/list — self vs team scope, and a deliberately different own_department rule than Task's own
 
 Fifth of the module's seven confirmed build steps — the smallest surface in this module by design (`Projects-Module-Plan.md` §4: "logged and listable, nothing more," no update/delete, no aggregate rollups, no timesheet approval). `TaskTimeEntriesController`/`TaskTimeEntriesService` added to `ProjectsModule`. Routes: `POST /tasks/:taskId/time-entries` (log), `GET /tasks/:taskId/time-entries` (list). No new default RBAC grants needed — `POST` is gated by `projects:edit` (matching the plan's own RBAC table, which files time-logging under an employee's `edit` right at `self` scope, the same grant that already covers task status), `GET` by `projects:view`; both were already seeded in step 2.
