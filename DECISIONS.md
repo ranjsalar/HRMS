@@ -7,6 +7,46 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Sales/CRM module, step 1: schema + migration + RLS (six new tables)
+
+First of the module's eight confirmed build steps (see `Sales-CRM-Module-Plan.md`). Six models — `Customer`, `CustomerContact`, `Lead`, `Deal`, `SalesOrder`, `SalesOrderLine` — and four enums (`CustomerType`, `LeadStatus`, `DealStage`, `SalesOrderStatus`), exactly as reviewed and confirmed. Same non-nullable-`companyId` RLS form as `Employee`/`Project`/`Task`, not the nullable-`companyId` OR/`WITH CHECK` form `Holiday`/`PayrollRegionRule` need.
+
+**Ordering note for the record:** `ERP-Master-Plan.md` lists Inventory as #3 and Sales/CRM as #4. Building Sales/CRM now skips Inventory, which is consistent with that document's own guidance on Inventory specifically ("Don't build this speculatively — ask first," pending real pilot confirmation) rather than a deviation from it. HR-side blockers (payroll legal review, translation review, live deployment) remain open in parallel, same arrangement as Projects.
+
+### The four design decisions confirmed before any code
+
+1. **`Customer`, never `Company`.** `ERP-Master-Plan.md` flagged this exact ambiguity. `Company` is unambiguously the tenant and the root of RLS, so the customer organization is `Customer` — and deliberately not `Account`, which would be a third word for the same idea and would collide with accounting vocabulary in module #5.
+2. **`CustomerContact` as its own model**, not primary-contact columns on `Customer` — B2B selling routinely involves two or three people at one customer, and collapsing them means either overwriting whoever you're not currently talking to or duplicating `Customer` rows per person, which corrupts every deal-per-customer count.
+3. **`Lead` separate from `Deal`, with an explicit conversion step.** The founder's original suggested stage set (`new/contacted/qualified/proposal/won/lost`) was a single continuous pipeline, so this was a deliberate counter-proposal, not an unexamined default. Reasoning: a lead is frequently just a name and a phone number, so folding it into `Deal` means either making `customerId`/`amount` nullable (making every pipeline-value figure defensive) or fabricating `Customer` records for people who never convert. Stages split cleanly with no overlap — `LeadStatus: new→contacted→qualified/disqualified`, `DealStage: new→proposal→negotiation→won/lost`.
+4. **No new `sales_rep` role.** A sales rep is exactly *an `employee` granted `sales:*` at `self` scope*; a sales manager is *a `manager` at `own_department`*. Adding to the `RoleName` enum would be a migration plus a permanent fourth branch in every role-conditional check across all modules — and the same argument would then apply to Support, Procurement, and every other function, ending in a role per department, which is the exact failure mode the department+scope model exists to avoid. Same precedent as Projects not adding a "project manager" role.
+
+### The Accounting connection point — documented, deliberately not built
+
+No speculative column was added. An `invoiceId String?` on `SalesOrder` today would point at a table that does not exist — the same guessing the birthday-field decision refused. **Recorded design:** when Accounting is built, `Invoice` carries a nullable `salesOrderId` FK pointing *back* at `SalesOrder`. That direction is deliberate: Accounting can then be built with zero migrations against any Sales table (only a Prisma back-relation, which is not a database change), and a `SalesOrder` stays valid with no invoice ever attached — which it must, since plenty never get invoiced through this system.
+
+### Two deliberate asymmetries worth remembering
+
+- **`Lead.source` is free text while `LeadStatus`/`DealStage` are enums.** Not an oversight: `source` is a label the application never branches on and whose useful values are genuinely per-company and unknowable in advance ("trade show", "referral", "walk-in"), so an enum would force a migration every time a company tried a new channel. The enums are workflow states the application actually reasons about.
+- **`Deal.amount` is deliberately never synced with the sum of a `SalesOrder`'s lines.** They answer different questions — "what do I think this is worth" vs "what did we actually quote" — and auto-overwriting the forecast with the quote destroys the ability to compare them. No denormalized order-total column either; totals are summed from lines at read time (small N, and it avoids a whole cache-invalidation class of bug).
+
+### Verification
+
+RLS proven, not assumed. `verify-rls.ts` extended with 10 new checks (31 total, all passing):
+
+- A **raw-SQL sweep across all six tables at once** — fail-closed with no scope, then exactly-one-row-each when scoped to Company A, then symmetric for Company B. Done in raw SQL deliberately: RLS is a database-level guarantee, and this asserts it at that level independent of any Prisma model mapping. Company B's rows demonstrably exist (created via the BYPASSRLS connection), so a leak would show 2 rather than 1 — this is a genuine proof, not an empty-database false pass.
+- **Write under RLS** — an `UPDATE` targeting Company B's deal while scoped to Company A affects zero rows, and the row is re-read via BYPASSRLS to confirm title *and* stage are genuinely unchanged. `Deal` chosen as the target because it carries the commercially sensitive data.
+- **Delete under RLS** — a third verb, and the one that would be silently destructive rather than merely wrong if it leaked. Zero rows affected, row confirmed still present afterward.
+
+Also confirmed directly in Postgres (`pg_tables.rowsecurity` and `pg_policies`) that all six tables have RLS enabled with `ALL`-command `tenant_isolation` policies, rather than trusting the migration ran.
+
+**Deferred honestly, not silently:** the plan's step 1 also mentioned the "maximal-permission cross-tenant probe" (granting an explicit unrestricted `all`-scope grant, then proving guessed cross-tenant IDs still 404). That probe operates over **HTTP through the RBAC layer**, which has no endpoints in this module until steps 3–6 — it cannot be run at step 1 and is not claimed here. It belongs in the step-8 verification pass, where it was originally established.
+
+**Environment note:** `prisma migrate dev` applied the migration successfully but its client regeneration failed with `EPERM` — the long-running local dev API server held the query-engine DLL open. Stopped the server, re-ran `prisma generate` cleanly, restarted. A Windows file-locking artifact of the local dev loop, not a code or migration issue; the migration itself had already applied.
+
+### Flagged forward for step 3, not fixed now
+
+`Deal.customerId`, `SalesOrder.customerId`, and `CustomerContact.customerId` are all `ON DELETE RESTRICT`. That is deliberate (same history-preservation bias as everywhere else), but it means **a naive `DELETE /customers/:id` will throw the exact same unhandled 500 the Projects audit found on `DELETE /tasks/:id` with logged time entries**. Recording it now so step 3 handles it as a designed 409 from the outset rather than rediscovering it as a bug in step 8 — the fix pattern is already established.
+
 ## 2026-08-01 — Projects module: fixes the step-7 audit's real bug — `DELETE /tasks/:id` with logged time entries, closing the module in full
 
 Founder's decision: block deletion with a clear, explanatory error when a task has any logged `TaskTimeEntry` rows, rather than cascading the delete or introducing a new soft-delete/archive concept for `Task` right now. Reasoning stated: matches this build's existing bias toward preserving history over silent data loss (`Employee` soft-delete, `Payslip` immutability), and it's the smallest safe change — no schema modification. If a real company later needs to delete a task that has logged time, the answer for now is remove/reassign the entries first; a real archive concept for `Task` can be revisited if that need becomes real.

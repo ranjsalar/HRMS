@@ -326,6 +326,219 @@ async function main(): Promise<void> {
         where: { id: { in: [projectA.id, projectB.id] } },
       });
     }
+
+    // ── 9. Sales/CRM module (Customer/CustomerContact/Lead/Deal/
+    // SalesOrder/SalesOrderLine) ────────────────────────────────────────
+    // No seed fixtures exist for this module either, so create throwaway
+    // rows via the BYPASSRLS connection and clean them up at the end.
+    // `ownerId` is nullable on all three owned entities, so no Employee
+    // fixtures are needed here.
+    const customerA = await superadminPrisma.customer.create({
+      data: { companyId: companyA.id, name: "RLS check customer A" },
+    });
+    const customerB = await superadminPrisma.customer.create({
+      data: { companyId: companyB.id, name: "RLS check customer B" },
+    });
+    const contactA = await superadminPrisma.customerContact.create({
+      data: { companyId: companyA.id, customerId: customerA.id, fullName: "RLS contact A" },
+    });
+    const contactB = await superadminPrisma.customerContact.create({
+      data: { companyId: companyB.id, customerId: customerB.id, fullName: "RLS contact B" },
+    });
+    const leadA = await superadminPrisma.lead.create({
+      data: { companyId: companyA.id, contactName: "RLS lead A" },
+    });
+    const leadB = await superadminPrisma.lead.create({
+      data: { companyId: companyB.id, contactName: "RLS lead B" },
+    });
+    const dealA = await superadminPrisma.deal.create({
+      data: { companyId: companyA.id, customerId: customerA.id, title: "RLS check deal A" },
+    });
+    const dealB = await superadminPrisma.deal.create({
+      data: { companyId: companyB.id, customerId: customerB.id, title: "RLS check deal B" },
+    });
+    const orderA = await superadminPrisma.salesOrder.create({
+      data: {
+        companyId: companyA.id,
+        dealId: dealA.id,
+        customerId: customerA.id,
+        reference: "RLS-CHECK-A",
+      },
+    });
+    const orderB = await superadminPrisma.salesOrder.create({
+      data: {
+        companyId: companyB.id,
+        dealId: dealB.id,
+        customerId: customerB.id,
+        reference: "RLS-CHECK-B",
+      },
+    });
+    const lineA = await superadminPrisma.salesOrderLine.create({
+      data: {
+        companyId: companyA.id,
+        salesOrderId: orderA.id,
+        description: "RLS check line A",
+        quantity: "1",
+        unitPrice: "100",
+      },
+    });
+    const lineB = await superadminPrisma.salesOrderLine.create({
+      data: {
+        companyId: companyB.id,
+        salesOrderId: orderB.id,
+        description: "RLS check line B",
+        quantity: "1",
+        unitPrice: "100",
+      },
+    });
+
+    try {
+      // A single sweep across ALL SIX tables rather than six hand-written
+      // blocks — done in raw SQL deliberately, since RLS is a
+      // database-level guarantee and this asserts it at that level
+      // directly, independent of any Prisma model mapping.
+      const salesTables = [
+        "Customer",
+        "CustomerContact",
+        "Lead",
+        "Deal",
+        "SalesOrder",
+        "SalesOrderLine",
+      ];
+
+      async function countsForScope(companyId: string | null): Promise<Record<string, number>> {
+        return appPrisma.$transaction(async (tx) => {
+          if (companyId) {
+            await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyId}'`);
+          }
+          const out: Record<string, number> = {};
+          for (const table of salesTables) {
+            const rows = await tx.$queryRawUnsafe<{ count: number }[]>(
+              `SELECT COUNT(*)::int AS count FROM "${table}"`,
+            );
+            out[table] = rows[0]?.count ?? -1;
+          }
+          return out;
+        });
+      }
+
+      const unscopedSales = await countsForScope(null);
+      check(
+        "hrms_app with no app.current_company_id set sees zero rows in ALL SIX Sales/CRM tables (fail-closed default)",
+        salesTables.every((t) => unscopedSales[t] === 0),
+        salesTables.map((t) => `${t}=${unscopedSales[t]}`).join(", "),
+      );
+
+      // Company B's rows exist (created above via BYPASSRLS), so a
+      // non-zero count here would be a genuine cross-tenant leak, not an
+      // empty-database false pass.
+      const scopedToASales = await countsForScope(companyA.id);
+      check(
+        "hrms_app scoped to Company A sees exactly its own row in each Sales/CRM table, never Company B's",
+        salesTables.every((t) => scopedToASales[t] === 1),
+        salesTables.map((t) => `${t}=${scopedToASales[t]}`).join(", "),
+      );
+
+      const scopedToBSales = await countsForScope(companyB.id);
+      check(
+        "hrms_app scoped to Company B sees exactly its own row in each Sales/CRM table, never Company A's",
+        salesTables.every((t) => scopedToBSales[t] === 1),
+        salesTables.map((t) => `${t}=${scopedToBSales[t]}`).join(", "),
+      );
+
+      // Typed, model-level checks on the two entities that carry the real
+      // commercial data — belt-and-suspenders over the raw sweep above.
+      const customersForA = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.customer.findMany();
+      });
+      check(
+        "hrms_app scoped to Company A sees only Company A's customers",
+        customersForA.length > 0 && customersForA.every((c) => c.companyId === companyA.id),
+        `got ${customersForA.length} row(s), companyIds: ${[...new Set(customersForA.map((c) => c.companyId))].join(", ")}`,
+      );
+
+      const directDealAttempt = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.deal.findMany({ where: { companyId: companyB.id } });
+      });
+      check(
+        "Explicit query for Company B's deals while scoped to Company A returns zero rows",
+        directDealAttempt.length === 0,
+        `got ${directDealAttempt.length} row(s)`,
+      );
+
+      // WRITE under RLS, not just SELECT — same proof shape added for
+      // Project in the Projects step-7 audit. Deal is the right target
+      // here: it carries the commercially sensitive data (amount, stage),
+      // so a cross-tenant write landing would be the worst case.
+      const crossTenantDealUpdate = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.deal.updateMany({
+          where: { id: dealB.id },
+          data: { title: "SHOULD NEVER APPLY — cross-tenant write attempt", stage: "won" },
+        });
+      });
+      check(
+        "UPDATE targeting Company B's deal while scoped to Company A affects zero rows",
+        crossTenantDealUpdate.count === 0,
+        `updated ${crossTenantDealUpdate.count} row(s)`,
+      );
+      const dealBUnchanged = await superadminPrisma.deal.findUniqueOrThrow({
+        where: { id: dealB.id },
+      });
+      check(
+        "Company B's deal title and stage are genuinely unchanged after the blocked cross-tenant write",
+        dealBUnchanged.title === "RLS check deal B" && dealBUnchanged.stage === "new",
+        `title="${dealBUnchanged.title}", stage="${dealBUnchanged.stage}"`,
+      );
+
+      // DELETE under RLS — a third verb, and the one that would be
+      // silently destructive rather than merely wrong if it leaked.
+      const crossTenantCustomerDelete = await appPrisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.current_company_id = '${companyA.id}'`);
+        return tx.customer.deleteMany({ where: { id: customerB.id } });
+      });
+      check(
+        "DELETE targeting Company B's customer while scoped to Company A affects zero rows",
+        crossTenantCustomerDelete.count === 0,
+        `deleted ${crossTenantCustomerDelete.count} row(s)`,
+      );
+      const customerBStillExists = await superadminPrisma.customer.findUnique({
+        where: { id: customerB.id },
+      });
+      check(
+        "Company B's customer row genuinely still exists after the blocked cross-tenant delete",
+        customerBStillExists !== null,
+      );
+
+      const allCustomersSuperadmin = await superadminPrisma.customer.findMany({
+        where: { id: { in: [customerA.id, customerB.id] } },
+      });
+      const seenCustomerCompanyIds = new Set(allCustomersSuperadmin.map((c) => c.companyId));
+      check(
+        "hrms_superadmin (BYPASSRLS) sees customers from both companies, no SET LOCAL needed",
+        seenCustomerCompanyIds.has(companyA.id) && seenCustomerCompanyIds.has(companyB.id),
+        `saw company ids: ${[...seenCustomerCompanyIds].join(", ")}`,
+      );
+    } finally {
+      // Reverse FK order: lines -> orders -> deals -> contacts -> customers.
+      // Leads are independent of all of them.
+      await superadminPrisma.salesOrderLine.deleteMany({
+        where: { id: { in: [lineA.id, lineB.id] } },
+      });
+      await superadminPrisma.salesOrder.deleteMany({
+        where: { id: { in: [orderA.id, orderB.id] } },
+      });
+      await superadminPrisma.deal.deleteMany({ where: { id: { in: [dealA.id, dealB.id] } } });
+      await superadminPrisma.customerContact.deleteMany({
+        where: { id: { in: [contactA.id, contactB.id] } },
+      });
+      await superadminPrisma.lead.deleteMany({ where: { id: { in: [leadA.id, leadB.id] } } });
+      await superadminPrisma.customer.deleteMany({
+        where: { id: { in: [customerA.id, customerB.id] } },
+      });
+    }
   } finally {
     await appPrisma.$disconnect();
     await superadminPrisma.$disconnect();
