@@ -7,6 +7,35 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Sales/CRM module, step 3: Customer + CustomerContact CRUD
+
+Third of the module's eight build steps. New `SalesModule` (`src/modules/sales/`) with `CustomersController`/`CustomersService`/DTOs, wired into `app.module.ts`. Routes: `GET /customers`, `GET /customers/:id` (with contacts), `POST /customers`, `PATCH /customers/:id`, `DELETE /customers/:id`, plus `POST|PATCH|DELETE /customers/:id/contacts[/:contactId]`. Leads, Deals, and SalesOrders (steps 4–6) will join this same module, matching the single `sales` RBAC module.
+
+### The read/write asymmetry, implemented
+
+`CustomersService` reads are **company-wide and take no scope argument at all** — the confirmed §3 decision. Writes are **owner-scoped**, resolved through `Employee.departmentId` on the *owner* (the same shape as `AttendanceService.teamTimesheet`, not Projects' membership rule). Both halves are proven over real HTTP: a self-scoped rep sees a customer owned by someone else (200) but cannot edit it (404), and a manager can read a customer owned outside their department but not edit it.
+
+Consistent with step 2's fail-closed direction, the widening lives in exactly one place (this service's read methods) rather than in a broad grant.
+
+Supporting decisions, all small but worth recording:
+
+- **"You own what you create."** `ownerId` defaults to the caller's own `Employee` when omitted. An explicit `ownerId` is validated against the caller's scope, so a self-scoped rep gets a 403 trying to assign a customer to someone else, and a manager gets one trying to assign outside their department.
+- **An unowned customer is writable only at `all` scope.** It belongs to nobody's department and is nobody's own, so neither narrower scope can match it. Deliberate — letting a rep "claim" an unowned customer would be a real feature the plan never asked for.
+- **Exactly one primary contact per customer**, enforced in the service inside the same tenant-scoped transaction. A Postgres partial unique index would be the DB-level equivalent but isn't expressible in the Prisma schema.
+- **Contact writes inherit the parent customer's write scope** — if you can edit the customer, you can manage its contacts. Same shape as `SalesOrder` inheriting from `Deal` in the plan.
+
+### The delete guard — designed in, not rediscovered
+
+Step 1 flagged that `Deal.customerId`, `SalesOrder.customerId`, and `CustomerContact.customerId` are all `ON DELETE RESTRICT`, so a naive delete would throw the same unhandled 500 the Projects audit found on `DELETE /tasks/:id`. Per the founder's instruction, that 409 is built in from the start rather than documented and deferred: `CustomersService.remove()` counts dependents first and throws `ConflictException` with a message naming *what* blocks it (`"...still has 2 deal(s), 1 contact(s). Remove or reassign them first."`). Three e2e tests cover it — blocked by contacts, blocked by a deal, and succeeding once nothing references the customer.
+
+**Blocks rather than cascades**, matching the founder's explicit decision on the analogous Task case (preserve history over silent data loss, smallest safe change). Cascading a customer's own *contacts* — arguably just child records, unlike deals and orders which are real business history — is a plausible later refinement, deliberately not invented now.
+
+### A real correction to step 2's own documentation, caught by this step's test
+
+The step-2 entry said a company turns an employee into a sales rep "by granting `sales:view`/`create`/`edit` at `self` scope through the existing `/rbac/permissions` UI." **That was imprecise in a way that matters.** `RolePermission` rows are role-wide when `userId` is null, and `PermissionCheckService` matches `OR: [{ userId: null }, { userId: input.userId }]` — so a role-wide `employee` + `sales:*` row would grant sales access to **every employee in the company**, which is precisely what the "employees get nothing by default" decision exists to prevent.
+
+The correct mechanism is a **per-user override** (a `RolePermission` row carrying `userId`). Found because the e2e test's first fixture made exactly this mistake: the supposedly un-granted employee got a 200 instead of the expected 403. That's a genuine finding about the design, not just a broken test — a company following the step-2 note literally would have over-granted. Corrected in the `default-role-permissions.ts` comment, and the test now uses per-user rows and passes, which means the distinction is pinned by a real test rather than only described in prose.
+
 ## 2026-08-01 — Sales/CRM module, step 2: RBAC wiring (`sales` added to `RBAC_MODULES`)
 
 Second of the module's eight build steps. `"sales"` added to `RBAC_MODULES` (`rbac.constants.ts`) and the default grants from `Sales-CRM-Module-Plan.md` §3 added to `DEFAULT_ROLE_PERMISSIONS`. One RBAC module covering all six entities, same reasoning as `projects` covering Project/Task/TaskTimeEntry. `CreateRolePermissionDto` validates against `RBAC_MODULES` directly, so it picked this up with no change; confirmed no frontend file hardcodes a module list either.

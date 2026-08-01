@@ -111,6 +111,13 @@ export const DEFAULT_ROLE_PERMISSIONS: DefaultPermissionTemplate[] = [
   // sales:view / sales:create / sales:edit at `self` scope through the
   // existing /rbac/permissions UI. That opt-in IS the "sales rep role" —
   // see DECISIONS.md on why no `sales_rep` RoleName was added.
+  //
+  // IMPORTANT: that opt-in must be a PER-USER override (a RolePermission
+  // row carrying `userId`), not a role-wide row. PermissionCheckService
+  // matches `OR: [{ userId: null }, { userId }]`, so a role-wide
+  // employee+sales row would turn the ENTIRE workforce into sales reps —
+  // exactly what the decision above exists to prevent. Caught by the
+  // step-3 e2e test; see DECISIONS.md.
 ];
 
 export function buildRolePermissionRows(companyId: string): Prisma.RolePermissionCreateManyInput[] {
