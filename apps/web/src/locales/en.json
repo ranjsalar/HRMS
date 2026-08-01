@@ -92,6 +92,7 @@
     "orgChart": "Org chart",
     "leaveApprovals": "Leave approvals",
     "overview": "Company overview",
+    "projects": "Projects",
     "superadmin": "Super Admin"
   },
   "dashboard": {
@@ -297,5 +298,27 @@
     "submitting": "Saving…",
     "success": "Correction saved — recorded as an admin override, not a normal clock-in.",
     "cancel": "Cancel"
+  },
+  "projects": {
+    "title": "Projects",
+    "empty": "No projects to show.",
+    "loadError": "Couldn't load your projects.",
+    "status": {
+      "planning": "Planning",
+      "active": "Active",
+      "on_hold": "On hold",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "detail": {
+      "backToList": "Back to projects",
+      "noDescription": "No description.",
+      "startDate": "Start date",
+      "dueDate": "Due date",
+      "noDates": "No dates set",
+      "membersTitle": "Members",
+      "noMembers": "No members yet.",
+      "loadError": "Couldn't load this project."
+    }
   }
 }

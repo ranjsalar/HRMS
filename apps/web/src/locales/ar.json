@@ -92,6 +92,7 @@
     "orgChart": "الهيكل التنظيمي",
     "leaveApprovals": "موافقات الإجازات",
     "overview": "نظرة عامة على الشركة",
+    "projects": "المشاريع",
     "superadmin": "المشرف العام"
   },
   "dashboard": {
@@ -297,5 +298,27 @@
     "submitting": "جارٍ الحفظ…",
     "success": "تم حفظ التصحيح — تم تسجيله كتعديل إداري، وليس تسجيل حضور عادي.",
     "cancel": "إلغاء"
+  },
+  "projects": {
+    "title": "المشاريع",
+    "empty": "لا توجد مشاريع لعرضها.",
+    "loadError": "تعذّر تحميل مشاريعك.",
+    "status": {
+      "planning": "تخطيط",
+      "active": "نشط",
+      "on_hold": "متوقف مؤقتًا",
+      "completed": "مكتمل",
+      "cancelled": "ملغى"
+    },
+    "detail": {
+      "backToList": "العودة إلى المشاريع",
+      "noDescription": "لا يوجد وصف.",
+      "startDate": "تاريخ البدء",
+      "dueDate": "تاريخ الاستحقاق",
+      "noDates": "لا توجد تواريخ محددة",
+      "membersTitle": "الأعضاء",
+      "noMembers": "لا يوجد أعضاء بعد.",
+      "loadError": "تعذّر تحميل هذا المشروع."
+    }
   }
 }

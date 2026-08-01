@@ -21,6 +21,11 @@ const LINKS: NavLink[] = [
   { href: "/", labelKey: "nav.dashboard" },
   { href: "/leave", labelKey: "nav.leave" },
   { href: "/payslips", labelKey: "nav.payslips" },
+  // No scope flag — visible to every role. GET /projects already resolves
+  // the caller's own scope server-side (self/own_department/all), the
+  // same "no client-side role gate, backend already scopes it" pattern
+  // /leave and /payslips use.
+  { href: "/projects", labelKey: "nav.projects" },
   { href: "/documents", labelKey: "nav.documents" },
   { href: "/profile", labelKey: "nav.profile" },
   { href: "/team", labelKey: "nav.team", managerOnly: true },
