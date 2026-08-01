@@ -16,6 +16,7 @@ import { LeaveModule } from "./modules/leave/leave.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { HolidaysModule } from "./modules/holidays/holidays.module";
 import { SuperAdminModule } from "./modules/superadmin/superadmin.module";
+import { ProjectsModule } from "./modules/projects/projects.module";
 import { AuthGuard } from "./common/guards/auth.guard";
 import { MustChangePasswordGuard } from "./common/guards/must-change-password.guard";
 import { RbacGuard } from "./common/guards/rbac.guard";
@@ -80,6 +81,7 @@ import { GlobalExceptionFilter } from "./common/filters/global-exception.filter"
     PayrollModule,
     HolidaysModule,
     SuperAdminModule,
+    ProjectsModule,
   ],
   controllers: [AppController],
   providers: [
