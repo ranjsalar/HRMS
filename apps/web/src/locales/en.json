@@ -354,12 +354,32 @@
     "loadError": "Couldn't load tasks for this project.",
     "unassigned": "Unassigned",
     "unknownAssignee": "Former team member",
+    "assignee": "Assignee",
+    "dueDate": "Due date",
     "status": {
       "label": "Status",
       "todo": "To do",
       "in_progress": "In progress",
       "blocked": "Blocked",
       "done": "Done"
+    },
+    "create": {
+      "addButton": "New task",
+      "title": "New task",
+      "taskTitle": "Title",
+      "submit": "Create task",
+      "submitting": "Creating…"
+    },
+    "edit": {
+      "editButton": "Edit",
+      "title": "Edit task",
+      "submit": "Save changes",
+      "submitting": "Saving…"
+    },
+    "delete": {
+      "button": "Delete",
+      "confirmPrompt": "Delete this task?",
+      "confirmButton": "Yes, delete"
     }
   }
 }

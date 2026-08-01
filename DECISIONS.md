@@ -7,6 +7,18 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Projects module, step 6.4: task create/edit/assign/delete (admin/manager-only)
+
+Confirmed the intended order with the founder first — my own "6.4"/"6.5" labels in the original proposal had drifted (I described step 6.5's content while calling it "6.4"); founder chose to keep the original order, so this step is Task CRUD, time logging is next.
+
+`CreateTaskForm`/`EditTaskForm`, folded into `TaskList` alongside the existing status control (same "one real consumer, don't split into more components than needed" reasoning as `ProjectDetail`'s own member-management section). `tasks-api.ts` gains `createTask`/`updateTask`/`deleteTask`. Gated by the same `canManage` prop `ProjectDetail` already threads through for Project editing — company_admin or manager (`projects:create`/`projects:edit` cover both Project and Task under one RBAC module, per the plan). A plain employee never sees these regardless of assignment, matching `TasksService.update()`/`remove()` rejecting `self` scope outright — the interactive status control (step 6.3) stays the *only* thing an assignee can touch here.
+
+**Assignment isn't restricted to project members** — deliberately: `Projects-Module-Plan.md` §1 treats membership and assignment as independent concepts, and `TasksService` never enforced the assignee must also be a `ProjectMember`. `CreateTaskForm`/`EditTaskForm`'s assignee picker is the full company team (`fetchTeam()`), not the project's member list.
+
+**No "unassign" path, by design, matching an existing backend limitation rather than working around it:** `UpdateTaskDto.assigneeId` is `@IsOptional() @IsUUID()` with no way to explicitly clear it to `null` — omitting the field just means "leave unchanged." `EditTaskForm`'s picker reflects this honestly: it pre-fills the current assignee, and leaving it blank does not unassign, it leaves the current assignee in place. Not something this step invented a frontend workaround for, since the plan never asked for an unassign feature.
+
+**RBAC boundary proof (`task-management.integration.spec.tsx`, 5 tests):** admin creates a real task through the actual form; admin reassigns it to a real employee through the actual edit form; manager (own_department, now satisfied by that real member from step 6.2's precondition) sees the same Edit/Delete controls on the now-visible task; the assignee (`canManage=false`) sees their own interactive status control from step 6.3 but no Edit/Delete/New-task controls anywhere; admin deletes it through the real confirm flow — genuinely gone from a fresh `GET /tasks` fetch afterward, a real hard delete.
+
 ## 2026-08-01 — Projects module, step 6.3: task list + the employee status-only control
 
 `tasks-api.ts` (`fetchTasks`, `updateTaskStatus`), `TaskList` component, wired into `ProjectDetail` below the members section. `GET /tasks` has no `projectId` query param (matches `/projects` — no filter params anywhere in this module), so `TaskList` fetches every task within the caller's scope and filters client-side by `task.projectId`, same "render exactly what scope resolution returned, narrowed by a real field" reasoning used everywhere else in this app.

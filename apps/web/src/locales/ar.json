@@ -354,12 +354,32 @@
     "loadError": "تعذّر تحميل مهام هذا المشروع.",
     "unassigned": "غير مسندة",
     "unknownAssignee": "عضو سابق في الفريق",
+    "assignee": "المسؤول",
+    "dueDate": "تاريخ الاستحقاق",
     "status": {
       "label": "الحالة",
       "todo": "قيد الانتظار",
       "in_progress": "قيد التنفيذ",
       "blocked": "متوقفة",
       "done": "منجزة"
+    },
+    "create": {
+      "addButton": "مهمة جديدة",
+      "title": "مهمة جديدة",
+      "taskTitle": "العنوان",
+      "submit": "إنشاء المهمة",
+      "submitting": "جارٍ الإنشاء…"
+    },
+    "edit": {
+      "editButton": "تعديل",
+      "title": "تعديل المهمة",
+      "submit": "حفظ التغييرات",
+      "submitting": "جارٍ الحفظ…"
+    },
+    "delete": {
+      "button": "حذف",
+      "confirmPrompt": "هل تريد حذف هذه المهمة؟",
+      "confirmButton": "نعم، حذف"
     }
   }
 }

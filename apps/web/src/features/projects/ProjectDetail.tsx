@@ -167,7 +167,7 @@ export function ProjectDetail({
 
       <ProjectMembers project={project} canManage={canManage} onChanged={() => void load()} />
 
-      <TaskList projectId={project.id} />
+      <TaskList projectId={project.id} canManage={canManage} />
     </div>
   );
 }

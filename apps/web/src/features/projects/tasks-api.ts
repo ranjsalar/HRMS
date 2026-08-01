@@ -33,3 +33,33 @@ export function fetchTasks(): Promise<TaskDto[]> {
 export function updateTaskStatus(id: string, status: TaskStatus): Promise<TaskDto> {
   return apiFetch<TaskDto>(`/tasks/${id}/status`, { method: "PATCH", body: { status } });
 }
+
+export interface CreateTaskInput {
+  projectId: string;
+  title: string;
+  description?: string;
+  assigneeId?: string;
+  dueDate?: string;
+}
+
+export function createTask(input: CreateTaskInput): Promise<TaskDto> {
+  return apiFetch<TaskDto>("/tasks", { method: "POST", body: input });
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string;
+  status?: TaskStatus;
+  assigneeId?: string;
+  dueDate?: string;
+}
+
+/** The general route — never reachable at self scope; TasksService.update() rejects it, matching Project's precedent. */
+export function updateTask(id: string, input: UpdateTaskInput): Promise<TaskDto> {
+  return apiFetch<TaskDto>(`/tasks/${id}`, { method: "PATCH", body: input });
+}
+
+/** Real hard delete — no soft/cancelled state exists on TaskStatus, unlike Project's archive. */
+export function deleteTask(id: string): Promise<void> {
+  return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
+}
