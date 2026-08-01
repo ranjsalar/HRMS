@@ -381,5 +381,18 @@
       "confirmPrompt": "Delete this task?",
       "confirmButton": "Yes, delete"
     }
+  },
+  "timeEntries": {
+    "title": "Time entries",
+    "showButton": "Time entries",
+    "hideButton": "Hide time entries",
+    "empty": "No time logged yet.",
+    "loadError": "Couldn't load time entries.",
+    "date": "Date",
+    "hours": "Hours",
+    "note": "Note (optional)",
+    "submit": "Log time",
+    "submitting": "Logging…",
+    "ownDepartmentCaveat": "As a manager, you may not see every hour logged here — only entries from people in your own department are shown, even for a task you can otherwise see in full."
   }
 }

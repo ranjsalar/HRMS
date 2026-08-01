@@ -29,7 +29,12 @@ export default function ProjectDetailPage() {
   return (
     <main dir={dir} className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
       <AppNav />
-      <ProjectDetail projectId={params.id} canManage={isAdmin || isManager} canArchive={isAdmin} />
+      <ProjectDetail
+        projectId={params.id}
+        canManage={isAdmin || isManager}
+        canArchive={isAdmin}
+        isManager={isManager}
+      />
     </main>
   );
 }

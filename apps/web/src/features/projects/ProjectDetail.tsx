@@ -24,12 +24,15 @@ export function ProjectDetail({
   projectId,
   canManage = false,
   canArchive = false,
+  isManager = false,
 }: {
   projectId: string;
   /** Edit + add/remove members — company_admin (all) or manager (own_department, a DEFAULT grant, unlike create). */
   canManage?: boolean;
   /** Archive — company_admin only by default, matching projects:delete never being a default manager grant (see DECISIONS.md, step 2). */
   canArchive?: boolean;
+  /** Distinct from canManage — gates TaskList's own_department time-entry caveat, which applies to manager specifically, never company_admin. */
+  isManager?: boolean;
 }) {
   const { t, locale, dir } = useTranslation();
   const [project, setProject] = useState<ProjectDetailDto | null>(null);
@@ -167,7 +170,7 @@ export function ProjectDetail({
 
       <ProjectMembers project={project} canManage={canManage} onChanged={() => void load()} />
 
-      <TaskList projectId={project.id} canManage={canManage} />
+      <TaskList projectId={project.id} canManage={canManage} isManager={isManager} />
     </div>
   );
 }

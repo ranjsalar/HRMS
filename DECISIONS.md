@@ -7,6 +7,20 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Projects module, step 6.5: time logging UI, and the own_department caveat copy — closes step 6 (frontend) entirely
+
+`task-time-entries-api.ts` (`fetchTimeEntries`/`logTimeEntry`), `TaskTimeEntries` component, wired into `TaskList` as a per-task expandable "Time entries" panel (a toggle button per row, not always-open — keeps the task list itself from growing unbounded as entries accumulate).
+
+**Logging is gated on `isAssignee` alone, unconditionally by role** — the log form never appears for `canManage` (admin/manager) unless they *also* happen to be the assignee, matching `TaskTimeEntriesService.log()`'s own unconditional-by-role assignee check from step 5 (not a scope-tiered rule, the same distinction already documented there). The entries *list*, by contrast, renders for anyone who can see the task at all — what it actually contains is scoped server-side.
+
+**Corrected a precision slip in my own step-5 UX note, not just implemented it.** That note said the plain-language explanation should be "visible to `company_admin`/`manager` roles specifically" — but its own stated reasoning (only `own_department` scope hits the gap; `all` and `self` never do) already implies `company_admin` (whose scope is `all`) should NOT see it. Implemented the caveat gated on a new `isManager` prop, threaded separately from `canManage` through `ProjectDetail` → `TaskList` → `TaskTimeEntries` (page.tsx already computed `isManager` for `canManage`'s own `isAdmin || isManager` composition — reused, not re-derived) — so `company_admin` genuinely never sees it, only `manager` does, matching the reasoning rather than the note's own imprecise summary of it. Flagging the correction explicitly rather than silently fixing it, since the founder had already signed off on the note's wording.
+
+The caveat text is shown unconditionally whenever `isManager` is true, regardless of whether the currently-displayed list happens to be complete or empty — a non-empty list could still be silently missing entries from an out-of-department assignee (e.g., after task reassignment), so scoping the caveat to "only when empty" would under-communicate the real, standing limitation.
+
+**RBAC boundary proof (`task-time-entries.integration.spec.tsx`, 3 tests):** the real assignee logs a genuine time entry through the actual form, re-verified via a direct API call afterward (not just the optimistic UI); `company_admin` sees the real entry with no log form (not the assignee) and no caveat; `manager` sees the same real entry (the assignee happens to share their department, so no gap manifests for this specific case) with no log form, but WITH the caveat — proving the caveat is a role-level signal, not a conditional-on-empty-list one.
+
+**This closes step 6 (frontend UI) in full** — 6.0 through 6.5 all shipped, verified locally and against real CI at every checkpoint. Step 7 (the full verification pass — RBAC boundaries hold for real, nothing leaks cross-tenant, translations complete and interpolation-correct, matching the same audit already run twice for HR) is next.
+
 ## 2026-08-01 — Projects module, step 6.4: task create/edit/assign/delete (admin/manager-only)
 
 Confirmed the intended order with the founder first — my own "6.4"/"6.5" labels in the original proposal had drifted (I described step 6.5's content while calling it "6.4"); founder chose to keep the original order, so this step is Task CRUD, time logging is next.

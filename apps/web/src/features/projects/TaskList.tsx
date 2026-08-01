@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/locale-context";
 import { CreateTaskForm } from "./CreateTaskForm";
 import { EditTaskForm } from "./EditTaskForm";
+import { TaskTimeEntries } from "./TaskTimeEntries";
 import { deleteTask, fetchTasks, updateTaskStatus, type TaskDto, type TaskStatus } from "./tasks-api";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "blocked", "done"];
@@ -28,9 +29,12 @@ const STATUSES: TaskStatus[] = ["todo", "in_progress", "blocked", "done"];
 export function TaskList({
   projectId,
   canManage = false,
+  isManager = false,
 }: {
   projectId: string;
   canManage?: boolean;
+  /** Distinct from `canManage` — gates the own_department time-entry caveat, which applies to `manager` specifically, never `company_admin` (whose scope is `all`). See TaskTimeEntries. */
+  isManager?: boolean;
 }) {
   const { t, dir } = useTranslation();
   const [tasks, setTasks] = useState<TaskDto[] | null>(null);
@@ -44,6 +48,7 @@ export function TaskList({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [expandedTimeEntriesId, setExpandedTimeEntriesId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,12 +146,14 @@ export function TaskList({
             const assigneeName = task.assigneeId
               ? (nameByEmployeeId.get(task.assigneeId) ?? t("tasks.unknownAssignee"))
               : t("tasks.unassigned");
+            const isExpanded = expandedTimeEntriesId === task.id;
             return (
               <li
                 key={task.id}
                 data-task-id={task.id}
-                className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3"
               >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-col gap-0.5">
                   <span className="font-body text-sm font-medium text-neutral-900">{task.title}</span>
                   <span className="font-body text-xs text-neutral-600">{assigneeName}</span>
@@ -202,7 +209,23 @@ export function TaskList({
                       )}
                     </>
                   ) : null}
+                  <Button
+                    variant="secondary"
+                    onClick={() => setExpandedTimeEntriesId(isExpanded ? null : task.id)}
+                  >
+                    {isExpanded ? t("timeEntries.hideButton") : t("timeEntries.showButton")}
+                  </Button>
                 </div>
+              </div>
+
+              {isExpanded ? (
+                <TaskTimeEntries
+                  taskId={task.id}
+                  isAssignee={isAssignee}
+                  showOwnDepartmentCaveat={isManager}
+                  team={team}
+                />
+              ) : null}
               </li>
             );
           })}
