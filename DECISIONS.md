@@ -7,6 +7,16 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Projects module: fixes the step-7 audit's real bug — `DELETE /tasks/:id` with logged time entries, closing the module in full
+
+Founder's decision: block deletion with a clear, explanatory error when a task has any logged `TaskTimeEntry` rows, rather than cascading the delete or introducing a new soft-delete/archive concept for `Task` right now. Reasoning stated: matches this build's existing bias toward preserving history over silent data loss (`Employee` soft-delete, `Payslip` immutability), and it's the smallest safe change — no schema modification. If a real company later needs to delete a task that has logged time, the answer for now is remove/reassign the entries first; a real archive concept for `Task` can be revisited if that need becomes real.
+
+`TasksService.remove()` now does a `taskTimeEntry.count()` check (after confirming the task exists within the caller's scope, before attempting the delete) and throws `ConflictException` (409) with an explanatory message if any exist, instead of letting the `ON DELETE RESTRICT` foreign key violation surface as an unhandled `500` through the global exception filter's generic fallback. No frontend change needed — `ConflictError extends ApiError` on the frontend already surfaces `error.message` verbatim through `TaskList`'s existing delete-error handling.
+
+New e2e test (`tasks.e2e-spec.ts`): logs a real time entry as the assignee, confirms the subsequent delete attempt returns 409 with a message matching `/logged time entries/i`, and confirms the task row is genuinely still there afterward (blocked, not half-applied). The existing "admin hard-deletes a task" test (a task with zero time entries) already covered the still-works case — no new test needed for that side.
+
+**This closes the Projects module in full** — backend (steps 1–5), frontend (steps 6.0–6.5), and the step-7 verification pass, including the one real bug the audit found and this fix resolves.
+
 ## 2026-08-01 — Projects module, step 7: verification pass — RLS extended with TaskTimeEntry + a genuine write-under-RLS proof
 
 Full audit run: RBAC boundaries re-confirmed end-to-end across every existing backend/frontend e2e suite for Project/Task/TaskTimeEntry (all still passing, all still proving own_department-via-membership, Task's view/write asymmetry, and the Task-vs-TaskTimeEntry scoping gap). Translations re-verified: `checkLocaleParity` passes, a direct value-diff across every key added this module found zero leaked English into ar/ku, and RTL was proven with a real render (temporary, audit-only spec, deleted afterward) rather than assumed from the shared `dir`/`t()` pattern already working elsewhere. All 10 mutating actions across the module (`create`/`update`/`archive`/`add_member`/`remove_member` on Project; `create`/`update`/`update_status`/`delete` on Task; `log_time` on TaskTimeEntry) confirmed to genuinely write attributed `AuditLog` rows via a direct DB read, not just by reading the code that calls `audit.record()`.

@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type { PermissionScope, Prisma, Task } from "@prisma/client";
 import { TenantContextStorage } from "../../database/prisma/tenant-context.storage";
 import { AuditService } from "../audit/audit.service";
@@ -175,7 +180,24 @@ export class TasksService {
     return this.tx().task.findUnique({ where: { id } });
   }
 
-  /** Real hard delete — the plan's own wording for Task ("delete") differs deliberately from Project's ("archive"); no soft/cancelled state exists on TaskStatus. Never reachable at `self` scope. */
+  /**
+   * Real hard delete — the plan's own wording for Task ("delete") differs
+   * deliberately from Project's ("archive"); no soft/cancelled state
+   * exists on TaskStatus. Never reachable at `self` scope.
+   *
+   * Blocked, with a clear explanatory error, if the task has any logged
+   * `TaskTimeEntry` rows — `TaskTimeEntry.taskId` is `ON DELETE RESTRICT`
+   * (step 1's deliberate choice: preserve logged-time history the same
+   * way `Employee` soft-deletes and `Payslip` stays immutable rather than
+   * silently losing data), so an unchecked delete attempt would otherwise
+   * surface as a raw, unhandled Postgres FK violation — a genuine bug
+   * found during step 7's verification pass, not a hypothetical. This is
+   * the smallest safe fix: no schema change, no cascade, no new
+   * soft-delete concept for Task. A real need to delete a task that has
+   * logged time can be revisited later (remove/reassign the entries
+   * first, or a real archive concept for Task) if it turns out to matter
+   * in practice. See DECISIONS.md.
+   */
   async remove(
     id: string,
     requestingUserId: string,
@@ -187,6 +209,16 @@ export class TasksService {
     }
     const where = await this.writeScopeWhere(requestingUserId, scope);
     if (where === null) return false;
+
+    const task = await this.tx().task.findFirst({ where: { id, ...where }, select: { id: true } });
+    if (!task) return false;
+
+    const loggedTimeCount = await this.tx().taskTimeEntry.count({ where: { taskId: id } });
+    if (loggedTimeCount > 0) {
+      throw new ConflictException(
+        "This task has logged time entries and cannot be deleted. Remove or reassign the time entries first.",
+      );
+    }
 
     const result = await this.tx().task.deleteMany({ where: { id, ...where } });
     if (result.count === 0) return false;

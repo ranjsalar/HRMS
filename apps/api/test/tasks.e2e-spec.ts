@@ -425,5 +425,24 @@ describe("Projects module — Task CRUD (e2e)", () => {
       const row = await superadmin.task.findUnique({ where: { id: taskBId } });
       expect(row).toBeNull();
     });
+
+    it("admin CANNOT delete a task that has logged time entries — a clean 409 with an explanatory message, not a raw 500 from the ON DELETE RESTRICT foreign key", async () => {
+      await request(server())
+        .post(`/tasks/${taskA1Id}/time-entries`)
+        .set("Authorization", `Bearer ${employeeToken}`)
+        .send({ date: "2026-07-20", hours: 1.5 })
+        .expect(201);
+
+      const res = await request(server())
+        .delete(`/tasks/${taskA1Id}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(409);
+      expect((res.body as { message: string }).message).toMatch(/logged time entries/i);
+
+      // The task is genuinely still there — the delete was blocked, not
+      // half-applied.
+      const row = await superadmin.task.findUnique({ where: { id: taskA1Id } });
+      expect(row).not.toBeNull();
+    });
   });
 });
