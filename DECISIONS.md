@@ -7,6 +7,20 @@ top. Each entry: what was decided, why, and what would prompt revisiting it.
 
 ---
 
+## 2026-08-01 — Real bug found by CI, unrelated to the change that triggered it: a hardcoded absolute date in `team.integration.spec.tsx` corrupted a shared fixture employee's "today" attendance state
+
+While closing out Projects module step 2 (an RBAC-only change with no connection to Attendance), the `frontend` CI job failed on `attendance.integration.spec.tsx`'s "a fresh mount reflects an already-open record" test — reproducible on a genuinely fresh CI database, confirmed via a manual re-run from the GitHub UI, not a flake.
+
+**Root cause, confirmed by direct HTTP reproduction (bypassing React entirely) against the local dev API:** `team.integration.spec.tsx`'s attendance-correction test hardcoded a literal absolute datetime, `"2026-08-01T09:00"`, as the "Clock in" value for an admin-override correction submitted against `IN_SCOPE_NAME` — which is the exact same shared, persistent `frontend-e2e-employee@hrms.test` fixture that `attendance.integration.spec.tsx` uses for its own real clock-in/out cycle. `attendance-api.ts`'s `fetchTodayAttendance()` requests `/attendance/me?from=today&to=today` and takes `records[0]` from a `clockIn: "desc"`-ordered list — it does not distinguish "most recent by clockIn" from "the record my own test just created." The moment real calendar time reached 2026-08-01, this hardcoded date stopped being "safely in the future" (when the test was presumably written) and became "today" — creating a same-day override record with a fixed clockIn (09:00 local / correspondingly UTC) that reliably sorts ahead of any real record created earlier that same morning during an actual test run, permanently shadowing the real open record for the rest of that calendar day.
+
+This is a genuine defect in test code, not application code, and not something that would resolve itself except by the calendar moving past 2026-08-01 — which would only have deferred the same failure mode to whatever future date someone next hardcodes.
+
+**Fix:** replaced the hardcoded date with `pastDateTimeLocalString(2)`, computed at test-run time as exactly 2 real days before whenever the suite actually runs (`team.integration.spec.tsx`) — far enough back to clear any timezone-offset edge (UTC-12 to UTC+14), so this correction can never again land inside any "today" range, on any date, in any timezone, regardless of when the suite executes.
+
+**Also cleaned up (local dev DB only, not app code):** 29 leftover `admin_override` `AttendanceRecord` rows for this fixture employee, accumulated from many past local runs of the pre-fix test, all sharing the same `note: "Real integration test correction"` — deleted via a one-off targeted script (not committed; matched precisely on `source` + `note` to avoid touching anything else). CI needed no equivalent cleanup, since its database is fresh every run.
+
+**Process note, matching this project's standing verification discipline:** initially reported the CI-red as a probable flake (comparable to a previously-documented CPU-contention flake class this same test suite already fixed once — see `vitest.config.ts`'s `fileParallelism: false` comment) after a clean local reproduction. The founder correctly pushed back: a fresh-database CI run reproducing the exact same failure twice rules out "one-off," and the right response to CI red is root-causing it for real, not re-asserting the flake theory a second time. Direct HTTP-layer reproduction (bypassing React, bypassing the test framework entirely) is what actually found it — a reminder that when a real-backend integration test fails inexplicably, dropping to the raw API layer isolates "test/component timing" from "actual stored data" far faster than reasoning about React effect timing in the abstract.
+
 ## 2026-08-01 — Projects module, step 2: RBAC wiring (`projects` added to `RBAC_MODULES`)
 
 Second of the module's seven confirmed build steps (see

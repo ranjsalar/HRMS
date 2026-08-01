@@ -22,6 +22,32 @@ const ADMIN_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 const IN_SCOPE_NAME = "Frontend E2E Employee";
 const OUT_OF_SCOPE_NAME = "Frontend E2E Out-of-Scope Employee";
 
+/**
+ * A `datetime-local` value guaranteed to fall on a PAST calendar day, in
+ * every timezone, relative to whenever this test actually runs.
+ *
+ * A hardcoded absolute date here ("2026-08-01T09:00") previously caused a
+ * real bug once real time caught up to it: this correction targets the
+ * SAME shared, persistent "frontend-e2e-employee" fixture that
+ * attendance.integration.spec.tsx's real clock-in/out tests use, and
+ * that file's `fetchTodayAttendance()` picks the single most-recent-
+ * clockIn record for "today" (UTC). Once the hardcoded date became
+ * "today," this correction's fixed clock-in time (09:00) sorted AHEAD of
+ * the real freshly-created open record from a same-day test run started
+ * later that same morning, so the widget showed the correction's (closed)
+ * state instead — a real, reproducible cross-test-file bug, not a flake.
+ * Computing a date safely 2 days in the past (well clear of any
+ * timezone-offset edge, from UTC-12 to UTC+14) means this record can
+ * never again land inside any "today" range, on any date, in any
+ * timezone. See DECISIONS.md.
+ */
+function pastDateTimeLocalString(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`;
+}
+
 interface LoginOkResponse {
   status: "ok";
   accessToken: string;
@@ -106,7 +132,7 @@ describe("Manager team view + attendance correction — real backend integration
     if (!row) throw new Error("Expected the employee name to be inside a team row");
 
     await userEvent.click(within(row).getByRole("button", { name: "Correct attendance" }));
-    await userEvent.type(within(row).getByLabelText("Clock in"), "2026-08-01T09:00");
+    await userEvent.type(within(row).getByLabelText("Clock in"), pastDateTimeLocalString(2));
     await userEvent.type(within(row).getByLabelText("Note"), "Real integration test correction");
     await userEvent.click(within(row).getByRole("button", { name: "Save correction" }));
 
